@@ -38,7 +38,7 @@ if sys.version_info < (3, 9, 0):
   # Required for union operators
   raise RuntimeError('Python 3.9 or greater required.')
 
-ADS_API_VERSION = 'v19'
+ADS_API_VERSION = 'v22'
 
 _OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 
