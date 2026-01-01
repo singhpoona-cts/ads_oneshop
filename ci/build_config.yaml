@@ -1,0 +1,68 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+steps:
+  # Bazel runs as 'ubuntu', and needs the volume to be writable
+  - name: 'ubuntu'
+    args: ['chmod', '-R', '777', '/output_user_root']
+    volumes:
+      - name: 'output-user-root'
+        path: '/output_user_root'
+  # TODO(cbartz): Reorder these
+  # Build the Cloud Run job OCI loader script, and point to it
+  - name: 'gcr.io/bazel-public/bazel:8.3.1'
+    entrypoint: 'bash'
+    args:
+      - '-ceux'
+      - |
+        bazel --output_user_root=/output_user_root/cache build ${_CR_TARGET}
+        echo $(bazel --output_user_root=/output_user_root/cache cquery --output=files ${_CR_TARGET}) > /workspace/cr_loader.sh
+    dir: '/workspace'
+    volumes:
+      - name: 'output-user-root'
+        path: '/output_user_root'
+  # Build the Dataflow OCI loader script, and point to it
+  - name: 'gcr.io/bazel-public/bazel:8.3.1'
+    entrypoint: 'bash'
+    args:
+      - '-ceux'
+      - |
+        bazel --output_user_root=/output_user_root/cache build ${_DF_TARGET}
+        echo $(bazel --output_user_root=/output_user_root/cache cquery --output=files ${_DF_TARGET}) > /workspace/df_loader.sh
+    dir: '/workspace'
+    volumes:
+      - name: 'output-user-root'
+        path: '/output_user_root'
+  # Run the Cloud Run job loader with Docker available
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['/workspace/cr_loader.sh']
+    volumes:
+      - name: 'output-user-root'
+        path: '/output_user_root'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', '${_CR_IMAGE}:latest', '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_CR_IMAGE}:${_TAG}']
+  # Run the Dataflow loader with Docker available
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args: ['/workspace/df_loader.sh']
+    volumes:
+      - name: 'output-user-root'
+        path: '/output_user_root'
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', '${_DF_IMAGE}:latest', '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_DF_IMAGE}:${_TAG}']
+images:
+  - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_CR_IMAGE}:${_TAG}'
+  - '${LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_DF_IMAGE}:${_TAG}'
+

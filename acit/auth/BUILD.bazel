@@ -12,6 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-client_id: your_client_id@here
-client_secret: your_client_secret_here
-developer_token: your_google_ads_developer_token
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+
+package(default_visibility = ["//acit:__subpackages__"])
+
+py_library(
+  name = "oauth_lib",
+  srcs = ["oauth.py"],
+)
+
+py_binary(
+  name = "oauth",
+  srcs = ["oauth.py"],
+  deps = [":oauth_lib"],
+)
+
+py_test(
+  name = "oauth_test",
+  main = "test_oauth.py",
+  srcs = ["test_oauth.py"],
+  deps = [
+      ":oauth_lib",
+      "@acit_deps//absl_py",
+  ],
+)

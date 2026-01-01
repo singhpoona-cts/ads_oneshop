@@ -1,4 +1,4 @@
-# Copyright 2026 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Generates dynamic python runtime environment variables for a dataflow worker.
 
-client_id: your_client_id@here
-client_secret: your_client_secret_here
-developer_token: your_google_ads_developer_token
+This allows hermetic Bazel-built python to be used in the Dataflow runtime.
+"""
+
+
+import os
+import sys
+
+_WORKER_ENTRYPOINT = """
+export RUN_PYTHON_SDK_IN_DEFAULT_ENVIRONMENT=1
+export PYTHONPATH={module_paths}
+export PYTHON_PATH={python}
+export PATH=$(dirname {python}):$PATH
+""".format(module_paths=os.environ.get('PYTHONPATH', ''), python=sys.executable)
+
+print(_WORKER_ENTRYPOINT)

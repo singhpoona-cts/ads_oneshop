@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,7 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# cred_helper.sh: A credential helper for accessing private artifact registry pip packages.
+if [[ "${1}" != "get" ]]; then
+    echo "Must call via 'cred_helper get'".
+    exit 1
+fi
 
-client_id: your_client_id@here
-client_secret: your_client_secret_here
-developer_token: your_google_ads_developer_token
+# Note: formatting is optional
+echo '{'
+echo '  "headers": {'
+echo '    "Authorization": ["Bearer '$(gcloud auth print-access-token)'"]'
+echo '  }'
+echo '}'

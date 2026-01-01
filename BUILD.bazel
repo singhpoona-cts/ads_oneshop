@@ -1,0 +1,146 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@bazel_lib//lib:run_binary.bzl", "run_binary")
+load("@rules_distroless//distroless:defs.bzl", "cacerts", "passwd")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+compile_pip_requirements(
+    name = "requirements",
+    src = "requirements.in",
+    requirements_txt = "requirements_lock.txt",
+)
+
+pkg_tar(
+    name = "awk_symlink",
+    symlinks = {"/usr/bin/awk": "/usr/bin/gawk"},
+)
+
+cacerts(
+    name = "cacerts",
+    package = "@debian//ca-certificates/amd64:data",
+)
+
+passwd(
+    name = "passwd",
+    entries = [
+        dict(
+            gecos = ["root"],
+            gid = 0,
+            home = "/root",
+            shell = "/usr/bin/bash",
+            uid = 0,
+            username = "root",
+        ),
+    ],
+)
+
+_COMMON_LAYERS = [
+    ":awk_symlink",
+    ":cacerts",
+    ":passwd",
+    "@debian//:flat",
+]
+
+oci_image(
+    name = "cloud_run_job",
+    architecture = "amd64",
+    entrypoint = [
+        "/usr/bin/bash",
+        "/acit/run_acit",
+    ],
+    env = {
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+    os = "linux",
+    tars = _COMMON_LAYERS + [
+        "//acit:acit_tar",
+    ],
+)
+
+oci_load(
+    name = "cloud_run_job.load",
+    image = ":cloud_run_job",
+    repo_tags = ["cloud_run_job:latest"],
+)
+
+filegroup(
+    name = "regctl",
+    srcs = ["@oci_tools_regctl_toolchains//:current_toolchain"],
+)
+
+# Redeclare the image to make a digest available
+oci_image(
+    name = "oci_beam_python",
+    base = "@oci_beam_python_linux_amd64",
+)
+
+# This is needed to extract the boot script from the oci_beam_python image.
+genrule(
+    name = "beam_python_boot_script",
+    srcs = [
+        ":oci_beam_python",
+        "oci_beam_python.digest",
+    ],
+    outs = ["beam_python_boot"],
+    cmd = """
+        $(location :regctl) \\
+            image \\
+            get-file \\
+            ocidir://$(location :oci_beam_python)@$$(cat $(location :oci_beam_python.digest)) \\
+            opt/apache/beam/boot \\
+            $@
+    """,
+    tools = [":regctl"],
+)
+
+pkg_tar(
+    name = "worker_boot_layer",
+    srcs = [":beam_python_boot_script"],
+    remap_paths = {
+        "beam_python_boot": "opt/apache/beam/boot",
+    },
+    strip_prefix = "/",
+)
+
+oci_image(
+    name = "dataflow_worker",
+    architecture = "amd64",
+    entrypoint = [
+        "/usr/bin/bash",
+        "/acit/dataflow_worker_entrypoint",
+    ],
+    os = "linux",
+    tars = _COMMON_LAYERS + [
+        ":worker_boot_layer",
+        "//acit:dataflow_worker_tar",
+    ],
+)
+
+oci_load(
+    name = "dataflow_worker.load",
+    image = ":dataflow_worker",
+    repo_tags = [
+        "dataflow:latest",
+    ],
+)
+
+alias(
+    name = "protoc_gen_bq_schema",
+    actual = "@protoc_gen_bq_schema//:v3",
+    visibility = ["//visibility:public"],
+)

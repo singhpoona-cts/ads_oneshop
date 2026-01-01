@@ -45,3 +45,5 @@ google_ads_developer_token.txt
 **/.terraform.lock.hcl
 env.sh
 
+bazel-*
+**/*.swp

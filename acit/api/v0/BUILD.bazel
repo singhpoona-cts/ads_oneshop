@@ -1,0 +1,65 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+  name = "schema_proto",
+  srcs = [
+      "storage/schema.proto"
+  ],
+  deps = [
+      "@protoc_gen_bq_schema//:protos_proto",
+  ]
+)
+
+py_proto_library(
+  name = "schema_py_pb2",
+  deps = [
+      ":schema_proto",
+  ]
+)
+
+run_binary(
+    name = "bq_gen_schemas",
+    srcs = [
+        # The tool has to be declared
+        "//:protoc_gen_bq_schema",
+        # We can't use -I, so we have to pass these instead
+        "@protoc_gen_bq_schema//:protos_proto",
+        "@protobuf//:descriptor_proto",
+        ":schema_proto",
+        # The file we actually want to process
+        ":storage/schema.proto",
+    ],
+    outs = [
+        "storage/Products.schema",
+        "storage/liasettings.schema",
+    ],
+    args = [
+        # alias the plugin because names are hard
+        "--plugin=protoc-gen-bq-schema=$(location //:protoc_gen_bq_schema)",
+        # magic output directory string
+        "--bq-schema_out=bazel-out/k8-fastbuild/bin/",
+        "--descriptor_set_in=$(location @protoc_gen_bq_schema//:protos_proto):$(location //acit/api/v0:schema_proto):$(location @protobuf//:descriptor_proto)",
+        "$(location :storage/schema.proto)"
+    ],
+    # Reuse the existing precompiled protoc
+    tool = "@toolchains_protoc_hub.linux_x86_64//:bin/protoc",
+)
+

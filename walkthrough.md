@@ -214,7 +214,7 @@ Run the following command and click the link to authenticate with the OAuth
 playground:
 
 ```sh
-python src/acit/auth/oauth.py client_secrets.json adwords content
+python acit/auth/oauth.py client_secrets.json adwords content
 ```
 
 Click the blue **Authorize APIs** button on the left-hand pane.
@@ -263,22 +263,15 @@ terraform -chdir=infra/ apply -auto-approve -var "project_id=${GOOGLE_CLOUD_PROJ
 During this step, you might see an error like this: "Error: Request `Create IAM Members roles/storage.admin". This means that some changes that were made haven't propagated yet. Wait a couple of minutes and run the same command again until you see a "Apply complete" message.
 
 
-## Build and install the Python package
-
-Run the following command to install the application locally:
-
-```sh
-make install
-```
-
-
 ## Store application secrets
 
 Run the command to store the application secrets:
 
 ```sh
-source ./.venv/bin/activate
-python -m acit.register_app_secrets
+bazel run //acit:register_app_secrets -- \
+  --client_secrets_path=$PWD/client_secrets.json \
+  --developer_token_path=$PWD/google_ads_developer_token.txt \
+  --refresh_token_path=$PWD/refresh_token.txt
 ```
 
 

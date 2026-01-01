@@ -1,0 +1,304 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_visibility = ["//:__pkg__"])
+
+py_library(
+    name = "resource_downloader_lib",
+    srcs = ["resource_downloader.py"],
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//google_api_python_client",
+        "@acit_deps//google_auth",
+    ],
+)
+
+py_binary(
+    name = "resource_downloader",
+    srcs = ["resource_downloader.py"],
+    deps = [
+        ":resource_downloader_lib",
+    ],
+)
+
+py_library(
+    name = "ads_lib",
+    srcs = ["ads.py"],
+    deps = [
+        "@acit_deps//google_ads",
+    ],
+)
+
+py_library(
+    name = "gaql_lib",
+    srcs = ["gaql.py"],
+    deps = [
+        ":ads_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_ads",
+        "@acit_deps//protobuf",
+    ],
+)
+
+py_binary(
+    name = "gaql",
+    srcs = ["gaql.py"],
+    deps = [
+        ":gaql_lib",
+    ],
+)
+
+py_binary(
+    name = "acit",
+    srcs = ["acit.py"],
+    deps = [
+        ":ads_lib",
+        ":gaql_lib",
+        ":resource_downloader_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_ads",
+        "@acit_deps//google_api_python_client",
+        "@acit_deps//google_auth",
+        "@acit_deps//google_auth_oauthlib",
+    ],
+)
+
+py_test(
+    name = "acit_test",
+    srcs = ["test_acit.py"],
+    main = "test_acit.py",
+    deps = [":acit"],
+)
+
+sh_binary(
+    name = "run_acit",
+    srcs = ["run_acit.sh"],
+    data = [
+        ":acit",
+        ":create_base_tables",
+        "//acit/api/v0:bq_gen_schemas",
+        "//acit/schemas/acit:bq_schemas",
+        "//acit/views",
+        "//extensions/merchant_excellence:run_mex",
+    ],
+    # Eventually, we will be able to remove the bazel_tools dep with this, but it doesn't work yet.
+    use_bash_launcher = True,
+    deps = [
+        ":bq_lib",
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+pkg_tar(
+    name = "acit_tar",
+    srcs = [
+        ":run_acit",
+    ],
+    include_runfiles = True,
+    strip_prefix = "/",
+)
+
+py_library(
+    name = "product_lib",
+    srcs = ["product.py"],
+)
+
+py_test(
+    name = "product_test",
+    srcs = ["tests/test_product.py"],
+    main = "tests/test_product.py",
+    deps = [
+        ":product_lib",
+        "@acit_deps//absl_py",
+    ],
+)
+
+py_library(
+    name = "performance_max_lib",
+    srcs = ["performance_max.py"],
+    deps = [":product_lib"],
+)
+
+py_test(
+    name = "performance_max_test",
+    srcs = ["tests/test_performance_max.py"],
+    main = "tests/test_performance_max.py",
+    deps = [
+        ":performance_max_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//apache_beam",
+    ],
+)
+
+py_library(
+    name = "shopping_lib",
+    srcs = ["shopping.py"],
+    deps = [":product_lib"],
+)
+
+py_test(
+    name = "shopping_test",
+    srcs = ["tests/test_shopping.py"],
+    main = "tests/test_shopping.py",
+    deps = [
+        ":shopping_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//apache_beam",
+        "@acit_deps//google_ads",
+    ],
+)
+
+py_library(
+    name = "secret_lib",
+    srcs = ["secret.py"],
+    deps = [
+        "@acit_deps//google_auth",
+        "@acit_deps//google_cloud_secret_manager",
+        "@acit_deps//google_crc32c",
+        "@acit_deps//pyyaml",
+    ],
+)
+
+py_test(
+    name = "secret_test",
+    srcs = ["tests/test_secret.py"],
+    main = "tests/test_secret.py",
+    deps = [
+        ":secret_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//google_crc32c",
+    ],
+)
+
+py_library(
+    name = "register_app_secrets_lib",
+    srcs = ["register_app_secrets.py"],
+    deps = [
+        ":secret_lib",
+        "//acit/auth:oauth_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "register_app_secrets",
+    srcs = ["register_app_secrets.py"],
+    deps = [
+        ":register_app_secrets_lib",
+    ],
+)
+
+py_test(
+    name = "register_app_secrets_test",
+    srcs = ["tests/test_register_app_secrets.py"],
+    main = "tests/test_register_app_secrets.py",
+    deps = [
+        ":register_app_secrets_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+    ],
+)
+
+py_library(
+    name = "create_base_tables_lib",
+    srcs = ["create_base_tables.py"],
+    deps = [
+        ":performance_max_lib",
+        ":product_lib",
+        ":resource_downloader_lib",
+        ":shopping_lib",
+        "//acit/api/v0:schema_py_pb2",
+        "@acit_deps//absl_py",
+        "@acit_deps//apache_beam",
+        "@acit_deps//protobuf",
+    ],
+)
+
+py_binary(
+    name = "create_base_tables",
+    srcs = ["create_base_tables.py"],
+    deps = [":create_base_tables_lib"],
+)
+
+py_binary(
+    name = "dataflow_worker_entrypoint_generator",
+    srcs = ["dataflow_worker_entrypoint_generator.py"],
+    deps = [":create_base_tables_lib"],
+)
+
+sh_binary(
+    name = "dataflow_worker_entrypoint",
+    srcs = ["dataflow_worker_entrypoint.sh"],
+    data = [
+        ":dataflow_worker_entrypoint_generator",
+    ],
+    use_bash_launcher = True,
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+pkg_tar(
+    name = "dataflow_worker_tar",
+    srcs = [
+        ":dataflow_worker_entrypoint",
+    ],
+    include_runfiles = True,
+    strip_prefix = "/",
+)
+
+py_test(
+    name = "create_base_tables_test",
+    srcs = ["tests/test_create_base_tables.py"],
+    main = "tests/test_create_base_tables.py",
+    deps = [
+        ":create_base_tables_lib",
+        "@acit_deps//absl_py",
+    ],
+)
+
+sh_library(
+    name = "bq_lib",
+    srcs = ["bq.sh"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)
+
+sh_binary(
+    name = "bq",
+    srcs = ["bq.sh"],
+    data = [
+        "//acit/api/v0:bq_gen_schemas",
+        "//acit/schemas/acit:bq_schemas",
+        "//acit/views",
+    ],
+    # Eventually, we will be able to remove the bazel_tools dep with this, but it doesn't work yet.
+    use_bash_launcher = True,
+    deps = [
+        ":bq_lib",
+        "@bazel_tools//tools/bash/runfiles",
+    ],
+)

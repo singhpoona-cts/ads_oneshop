@@ -1,0 +1,8 @@
+github.com/GoogleCloudPlatform/protoc-gen-bq-schema/v3 v3.1.0 h1:C4NkpNcfnHLNZq9bspnyfj2TR4lTu2KEdbR7kcD9BUc=
+github.com/GoogleCloudPlatform/protoc-gen-bq-schema/v3 v3.1.0/go.mod h1:mBBReylUchn5O7KqcOK83/V51uPFZIgN/pJrhRc7Plw=
+github.com/golang/glog v1.2.4 h1:CNNw5U8lSiiBk7druxtSHHTsRWcxKoac6kZKm2peBBc=
+github.com/golang/glog v1.2.4/go.mod h1:6AhwSGph0fcJtXVM/PEHPqZlFeoLxhs7/t5UDAwmO+w=
+github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
+github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+google.golang.org/protobuf v1.36.3 h1:82DV7MYdb8anAVi3qge1wSnMDrnKK7ebr+I0hHRN1BU=
+google.golang.org/protobuf v1.36.3/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=

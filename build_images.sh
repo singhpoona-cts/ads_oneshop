@@ -41,36 +41,18 @@ if [[ -z "${CLOUD_BUILD_SERVICE_ACCOUNT}" ]]; then
 fi
 
 
-export BUILD_TAG_BASE="${DATAFLOW_REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/${IMAGES_REPO}"
-
 function build_images() {
         rm -f image_sources.tar image_sources.tar.gz
         tar cvf image_sources.tar --exclude-vcs --exclude-vcs-ignores .
+        gzip -f image_sources.tar
 
-        # TODO: Parameterize Python and Beam SDK version (currently 3.11/2.60.0)
-        # TODO: Build the bdist/wheel once in a base container
-
-        # dataflow worker image
-        cp {,dataflow_}image_sources.tar
-        tar rf dataflow_image_sources.tar -C dockerfiles/dataflow/ Dockerfile
-        gzip -f dataflow_image_sources.tar
         gcloud builds submit \
           --gcs-log-dir="${CLOUD_BUILD_LOGS_URL}" \
           --service-account="${CLOUD_BUILD_SERVICE_ACCOUNT}" \
           --region="${DATAFLOW_REGION}" \
-          --tag "${BUILD_TAG_BASE}/dataflow:latest" \
-          dataflow_image_sources.tar.gz
-
-        # cloud run job image
-        cp {,cloud_run_job_}image_sources.tar
-        tar rf cloud_run_job_image_sources.tar -C dockerfiles/cloud_run_job/ Dockerfile
-        gzip -f cloud_run_job_image_sources.tar
-        gcloud builds submit \
-          --gcs-log-dir="${CLOUD_BUILD_LOGS_URL}" \
-          --service-account="${CLOUD_BUILD_SERVICE_ACCOUNT}" \
-          --region="${DATAFLOW_REGION}" \
-          --tag "${BUILD_TAG_BASE}/cloud_run_job:latest" \
-          cloud_run_job_image_sources.tar.gz
+          --substitutions=_REPOSITORY="${IMAGES_REPO}",_CR_IMAGE="cloud_run_job",_DF_IMAGE="dataflow",_CR_TARGET="//:cloud_run_job.load",_DF_TARGET="//:dataflow_worker.load",_TAG="latest" \
+	  --config=ci/build_config.yaml \
+          image_sources.tar.gz
 
         rm *.tar*
 }

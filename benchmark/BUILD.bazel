@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-client_id: your_client_id@here
-client_secret: your_client_secret_here
-developer_token: your_google_ads_developer_token
+exports_files([
+   "benchmark_details.csv",
+   "benchmark_values.csv",
+])
+

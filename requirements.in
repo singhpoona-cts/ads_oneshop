@@ -1,0 +1,18 @@
+google-ads
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-cloud-bigquery
+google-cloud-storage
+six
+absl-py
+apache-beam[gcp]==2.69.0
+protobuf
+etils[epath-gcs]
+google-cloud-secret-manager
+PyYAML
+google-crc32c
+# pin for artifact registry
+regex==2024.11.6
+typing_extensions
