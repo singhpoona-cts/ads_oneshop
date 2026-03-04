@@ -45,7 +45,7 @@ pip.parse(
     # copybara:strip_begin
     # NOTE: need to update ~/.bazelrc with the following content:
     #   common --credential_helper=us-python.pkg.dev=%workspace%/cred_helper.sh
-    experimental_index_url = "https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple/",
+    # experimental_index_url = "https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple/",
     # copybara:strip_end
     hub_name = "acit_deps",
     python_version = python_version,
@@ -71,7 +71,6 @@ use_repo(
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.toolchains(name = "oci_tools")
-
 oci.pull(
     name = "oci_beam_python",
     # 2.69.0
