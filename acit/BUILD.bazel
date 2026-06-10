@@ -66,12 +66,104 @@ py_binary(
     ],
 )
 
+py_library(
+    name = "merchant_accounts_lib",
+    srcs = ["merchant_accounts.py"],
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_api_core",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
+py_test(
+    name = "merchant_accounts_test",
+    srcs = ["tests/test_merchant_accounts.py"],
+    main = "tests/test_merchant_accounts.py",
+    deps = [
+        ":merchant_accounts_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
+py_library(
+    name = "merchant_lia_lib",
+    srcs = ["merchant_lia.py"],
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_api_core",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
+py_test(
+    name = "merchant_lia_test",
+    srcs = ["tests/test_merchant_lia.py"],
+    main = "tests/test_merchant_lia.py",
+    deps = [
+        ":merchant_lia_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
+py_library(
+    name = "merchant_products_lib",
+    srcs = ["merchant_products.py"],
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_api_core",
+        "@acit_deps//google_shopping_merchant_products",
+    ],
+)
+
+py_test(
+    name = "merchant_products_test",
+    srcs = ["tests/test_merchant_products.py"],
+    main = "tests/test_merchant_products.py",
+    deps = [
+        ":merchant_products_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//google_shopping_merchant_products",
+    ],
+)
+
+py_library(
+    name = "merchant_shipping_lib",
+    srcs = ["merchant_shipping.py"],
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_api_core",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
+py_test(
+    name = "merchant_shipping_test",
+    srcs = ["tests/test_merchant_shipping.py"],
+    main = "tests/test_merchant_shipping.py",
+    deps = [
+        ":merchant_shipping_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
+)
+
 py_binary(
     name = "acit",
     srcs = ["acit.py"],
     deps = [
         ":ads_lib",
         ":gaql_lib",
+        ":merchant_accounts_lib",
+        ":merchant_lia_lib",
+        ":merchant_products_lib",
+        ":merchant_shipping_lib",
         ":resource_downloader_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",

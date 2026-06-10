@@ -22,7 +22,6 @@ from absl.testing import flagsaver
 from absl.testing import parameterized
 from acit import acit
 from acit import gaql
-from acit import resource_downloader
 from google import auth
 from google.ads.googleads import client
 
@@ -34,19 +33,46 @@ class TestAcit(parameterized.TestCase):
     self._old_environ = os.environ.copy()
     self._logging_cm = self.enter_context(self.assertLogs())
 
+    # Merchant Center data is pulled via the Merchant API (stable v1) gRPC
+    # clients. Stub those out so the tests exercise only the credential / Ads
+    # logic without making real network calls. `download_accounts` returns the
+    # (aggregators, standalones, leaf->parent) topology; the rest are side-effect
+    # only.
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_accounts,
+            'download_accounts',
+            autospec=True,
+            return_value=(set(), set(), {}),
+        )
+    )
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_products, 'download_products', autospec=True
+        )
+    )
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_lia, 'download_omnichannel_settings', autospec=True
+        )
+    )
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_shipping, 'download_shipping_settings', autospec=True
+        )
+    )
+
   def tearDown(self):
     super().tearDown()
     for k in self._old_environ:
       os.environ[k] = self._old_environ[k]
 
-  @mock.patch.object(resource_downloader, 'download_resources', autospec=True)
   @mock.patch.object(gaql, 'run_query', autospec=True)
-  def test_login_customer_id(self, run_query, download_resources):
+  def test_login_customer_id(self, run_query):
     ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
     with mock.patch.object(
         client, 'GoogleAdsClient', return_value=ads_client, autospec=True
     ):
-      download_resources.return_value = []
       run_query.return_value = []
 
       output_dir = self.create_tempdir()
@@ -58,16 +84,12 @@ class TestAcit(parameterized.TestCase):
         self.assertEqual('123', ads_client.login_customer_id)
         self.assertEqual('123', run_query.call_args.kwargs['customer_id'])
 
-  @mock.patch.object(resource_downloader, 'download_resources', autospec=True)
   @mock.patch.object(gaql, 'run_query', autospec=True)
-  def test_login_customer_id_with_subaccount(
-      self, run_query, download_resources
-  ):
+  def test_login_customer_id_with_subaccount(self, run_query):
     ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
     with mock.patch.object(
         client, 'GoogleAdsClient', return_value=ads_client, autospec=True
     ):
-      download_resources.return_value = []
       run_query.return_value = []
 
       output_dir = self.create_tempdir()
@@ -109,14 +131,12 @@ class TestAcit(parameterized.TestCase):
           'expect_is_adc': True,
       },
   )
-  @mock.patch.object(resource_downloader, 'download_resources', autospec=True)
   @mock.patch.object(gaql, 'run_query', autospec=True)
   @mock.patch.object(auth, 'default', wraps=auth.default)
   def test_credentials(
       self,
       mock_auth_default,
       run_query,
-      download_resources,
       client_id,
       client_secret,
       refresh_token,
@@ -130,7 +150,6 @@ class TestAcit(parameterized.TestCase):
     with mock.patch.object(
         client, 'GoogleAdsClient', return_value=ads_client, autospec=True
     ):
-      download_resources.return_value = []
       run_query.return_value = []
 
       output_dir = self.create_tempdir()

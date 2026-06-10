@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// NOTE: As of the Merchant API migration (Phase 2), the product messages below
+// model the **native Merchant API v1 `Product`** shape (snake_case attributes
+// nested under `product_attributes`, `Price` in micros, enums stored as their
+// NAME string, `gtins` repeated, `custom_label_0..4`). The Content API
+// `productstatuses` collection no longer exists -- status is carried in
+// `Product.product_status` by the API and split into `WideProduct.status` by the
+// Beam pipeline. `WideProduct.product.channel` is a DERIVED dimension
+// (`legacy_local ? "local" : "online"`) needed for the Ads performance FK join,
+// which still keys on channel.
+
 syntax = "proto3";
 
 package acit.api.v0.storage;
@@ -34,223 +44,196 @@ message WideProduct {
   optional string account_id = 12;
 }
 
-message CombinedLiaSettings {
+// Phase 3 migration: Content API `liasettings` -> Merchant API v1
+// `OmnichannelSettings`. v1 has no `liasettings` resource, no MCA roll-down
+// `list`, and the aggregator itself is not a valid parent (PermissionDenied), so
+// settings are listed per (sub)account directly. We therefore drop the old
+// {settings, children[]} envelope and write one FLAT row per account, each with a
+// repeated list of per-region OmnichannelSetting. The MCA<->child relationship is
+// recovered downstream from the (already migrated) `accounts` table.
+message OmnichannelLiaSettings {
   option (gen_bq_schema.bigquery_opts).table_name = "liasettings";
 
-  optional LiaSettings settings = 1;
+  optional int64 account_id = 1;
 
-  repeated LiaSettings children = 2;
+  repeated OmnichannelSetting omnichannel_settings = 2;
 }
 
-message Product {
-  optional string id = 1;
+// === Merchant API v1 Product ===
 
+message Product {
+  // Resource name: accounts/{account}/products/{product}.
+  optional string name = 1;
+
+  // Identity (top-level on the v1 Product, was encoded into the old colon `id`).
   optional string offer_id = 2;
 
-  optional string title = 3;
+  optional string content_language = 3;
 
-  optional string description = 4;
+  optional string feed_label = 4;
 
-  optional string link = 5;
+  // Native v1 flag indicating a local (vs online) offer.
+  optional bool legacy_local = 5;
+
+  // DERIVED from `legacy_local` in the Beam pipeline ("local"/"online"). Kept so
+  // the Ads `performance` FK join (which keys on `productChannel`) and the
+  // listing-group targeting matcher keep working. Not a raw API field.
+  optional string channel = 6;
+
+  optional string data_source = 7;
+
+  optional int64 version_number = 8;
+
+  optional ProductAttributes product_attributes = 9;
+
+  repeated CustomAttribute custom_attributes = 10;
+}
+
+message ProductAttributes {
+  optional string title = 1;
+
+  optional string description = 2;
+
+  optional string link = 3;
+
+  optional string mobile_link = 4;
+
+  optional string canonical_link = 5;
 
   optional string image_link = 6;
 
   repeated string additional_image_links = 7;
 
-  repeated string lifestyle_image_links = 126;
+  repeated string lifestyle_image_links = 8;
 
-  optional string content_language = 8;
+  optional bool identifier_exists = 9;
 
-  optional string target_country = 9;
+  optional bool is_bundle = 10;
 
-  optional string feed_label = 125;
+  optional string brand = 11;
 
-  optional string channel = 10;
+  // Was the single `gtin` string in the Content API; now repeated.
+  repeated string gtins = 12;
 
-  optional string expiration_date = 11;
+  optional string mpn = 13;
 
-  optional string disclosure_date = 128;
+  optional string google_product_category = 14;
 
-  optional bool adult = 12;
+  repeated string product_types = 15;
 
-  optional string kind = 13;
-
-  optional string brand = 16;
+  optional string item_group_id = 16;
 
   optional string color = 17;
 
-  optional string google_product_category = 24;
+  optional string material = 18;
 
-  optional string gtin = 25;
+  optional string pattern = 19;
 
-  optional string item_group_id = 26;
+  optional string size = 20;
 
-  optional string material = 28;
+  // Enum NAME strings.
+  optional string size_system = 21;
 
-  optional string mpn = 29;
+  repeated string size_types = 22;
 
-  optional string pattern = 30;
+  optional string age_group = 23;
 
-  optional Price price = 32;
+  optional string gender = 24;
 
-  optional Price sale_price = 37;
+  optional bool adult = 25;
 
-  optional string sale_price_effective_date = 38;
+  // Enum NAME strings (e.g. IN_STOCK / NEW / PAUSED).
+  optional string availability = 26;
 
-  optional ProductDimension product_height = 119;
+  optional string condition = 27;
 
-  optional ProductDimension product_length = 120;
+  optional string pause = 28;
 
-  optional ProductDimension product_width = 121;
+  optional string expiration_date = 29;
 
-  optional ProductWeight product_weight = 122;
+  optional string disclosure_date = 30;
 
-  repeated ProductShipping shipping = 39;
+  optional string availability_date = 31;
 
-  repeated FreeShippingThreshold free_shipping_threshold = 131;
+  // Pricing. `Price` is now {amount_micros, currency_code}.
+  optional Price price = 40;
 
-  optional ProductShippingWeight shipping_weight = 40;
+  optional Price sale_price = 41;
 
-  repeated string sizes = 41;
+  optional string sale_price_effective_date = 42;
 
-  repeated ProductTax taxes = 42;
+  optional Price cost_of_goods_sold = 43;
 
-  repeated CustomAttribute custom_attributes = 49;
+  optional Price auto_pricing_min_price = 44;
 
-  optional bool identifier_exists = 53;
+  optional Price maximum_retail_price = 45;
 
-  optional Installment installment = 54;
+  // Shipping.
+  repeated Shipping shipping = 50;
 
-  optional LoyaltyPoints loyalty_points = 55;
+  optional ShippingWeight shipping_weight = 51;
 
-  optional int64 multipack = 59;
+  optional int64 max_handling_time = 52;
 
-  optional string custom_label0 = 60;
+  optional int64 min_handling_time = 53;
 
-  optional string custom_label1 = 61;
+  optional string shipping_label = 54;
 
-  optional string custom_label2 = 62;
+  optional string transit_time_label = 55;
 
-  optional string custom_label3 = 63;
+  repeated FreeShippingThreshold free_shipping_threshold = 56;
 
-  optional string custom_label4 = 64;
+  // Dimensions / weight.
+  optional ProductDimension product_height = 60;
 
-  optional bool is_bundle = 65;
+  optional ProductDimension product_length = 61;
 
-  optional string mobile_link = 66;
+  optional ProductDimension product_width = 62;
 
-  optional string availability_date = 67;
+  optional ProductWeight product_weight = 63;
 
-  optional string shipping_label = 70;
+  // Custom labels (underscore before the digit in v1).
+  optional string custom_label_0 = 70;
 
-  optional ProductUnitPricingMeasure unit_pricing_measure = 71;
+  optional string custom_label_1 = 71;
 
-  optional ProductUnitPricingBaseMeasure unit_pricing_base_measure = 72;
+  optional string custom_label_2 = 72;
 
-  optional ProductShippingDimension shipping_length = 73;
+  optional string custom_label_3 = 73;
 
-  optional ProductShippingDimension shipping_width = 74;
+  optional string custom_label_4 = 74;
 
-  optional ProductShippingDimension shipping_height = 75;
+  // Destinations.
+  repeated string included_destinations = 80;
 
-  optional string display_ads_id = 76;
+  repeated string excluded_destinations = 81;
 
-  repeated string display_ads_similar_ids = 77;
+  repeated string shopping_ads_excluded_countries = 82;
 
-  optional string display_ads_title = 78;
+  // Misc.
+  repeated string promotion_ids = 90;
 
-  optional string display_ads_link = 79;
+  optional int64 multipack = 91;
 
-  optional double display_ads_value = 80;
+  optional string external_seller_id = 92;
 
-  optional int64 sell_on_google_quantity = 82;
+  repeated ProductDetail product_details = 93;
 
-  repeated string promotion_ids = 83;
+  repeated string product_highlights = 94;
 
-  optional int64 max_handling_time = 85;
+  optional int64 sell_on_google_quantity = 95;
 
-  optional int64 min_handling_time = 86;
+  optional string energy_efficiency_class = 96;
 
-  optional Price cost_of_goods_sold = 87;
+  optional string min_energy_efficiency_class = 97;
 
-  optional Price auto_pricing_min_price = 88;
-
-  optional string source = 90;
-
-  repeated string included_destinations = 91;
-
-  repeated string excluded_destinations = 92;
-
-  optional string ads_grouping = 93;
-
-  repeated string ads_labels = 94;
-
-  optional string ads_redirect = 95;
-
-  repeated string product_types = 96;
-
-  optional string age_group = 97;
-
-  optional string availability = 98;
-
-  optional string condition = 99;
-
-  optional string gender = 100;
-
-  optional string size_system = 101;
-
-  optional string size_type = 102;
-
-  optional string additional_size_type = 114;
-
-  optional string energy_efficiency_class = 103;
-
-  optional string min_energy_efficiency_class = 104;
-
-  optional string max_energy_efficiency_class = 105;
-
-  optional string tax_category = 106;
-
-  optional string transit_time_label = 107;
-
-  repeated string shopping_ads_excluded_countries = 109;
-
-  optional string pickup_method = 115;
-
-  optional string pickup_sla = 116;
-
-  optional string link_template = 117;
-
-  optional string mobile_link_template = 118;
-
-  repeated ProductProductDetail product_details = 110;
-
-  repeated string product_highlights = 111;
-
-  optional ProductSubscriptionCost subscription_cost = 112;
-
-  optional string canonical_link = 113;
-
-  optional string external_seller_id = 123;
-
-  optional string pause = 124;
-
-  optional string virtual_model_link = 130;
-
-  repeated CloudExportAdditionalProperties cloud_export_additional_properties =
-      127;
-
-  repeated ProductCertification certifications = 129;
-
-  optional ProductStructuredTitle structured_title = 132;
-
-  optional ProductStructuredDescription structured_description = 133;
+  optional string max_energy_efficiency_class = 98;
 }
 
 message Price {
-  optional string value = 1;
+  optional int64 amount_micros = 1;
 
-  optional string currency = 2;
+  optional string currency_code = 2;
 }
 
 message ProductDimension {
@@ -265,7 +248,13 @@ message ProductWeight {
   optional string unit = 2;
 }
 
-message ProductShipping {
+message ShippingWeight {
+  optional double value = 1;
+
+  optional string unit = 2;
+}
+
+message Shipping {
   optional Price price = 1;
 
   optional string country = 2;
@@ -273,8 +262,6 @@ message ProductShipping {
   optional string region = 3;
 
   optional string service = 4;
-
-  repeated string service_alternative_list = 212;
 
   optional int64 location_id = 5;
 
@@ -297,67 +284,15 @@ message FreeShippingThreshold {
   optional Price price_threshold = 2;
 }
 
-message ProductUnitPricingBaseMeasure {
-  optional int64 value = 1;
-
-  optional string unit = 2;
-}
-
-message ProductUnitPricingMeasure {
-  optional double value = 1;
-
-  optional string unit = 2;
-}
-
-message ProductShippingWeight {
-  optional double value = 1;
-
-  optional string unit = 2;
-}
-
-message ProductTax {
-  optional double rate = 1;
-
-  optional string country = 2;
-
-  optional string region = 3;
-
-  optional bool tax_ship = 4;
-
-  optional int64 location_id = 5;
-
-  optional string postal_code = 6;
-}
-
 message CustomAttribute {
   optional string name = 1;
 
-  optional string value = 4;
+  optional string value = 2;
 
-  repeated CustomAttribute group_values = 5;
+  repeated CustomAttribute group_values = 3;
 }
 
-message Installment {
-  optional int64 months = 1;
-
-  optional Price amount = 2;
-}
-
-message LoyaltyPoints {
-  optional string name = 1;
-
-  optional int64 points_value = 2;
-
-  optional double ratio = 3;
-}
-
-message ProductShippingDimension {
-  optional double value = 1;
-
-  optional string unit = 2;
-}
-
-message ProductProductDetail {
+message ProductDetail {
   optional string section_name = 1;
 
   optional string attribute_name = 2;
@@ -365,94 +300,45 @@ message ProductProductDetail {
   optional string attribute_value = 3;
 }
 
-message ProductSubscriptionCost {
-  optional string period = 1;
-
-  optional int64 period_length = 2;
-
-  optional Price amount = 3;
-}
-
-message CloudExportAdditionalProperties {
-  optional string property_name = 1;
-
-  repeated string text_value = 2;
-
-  optional bool bool_value = 3;
-
-  repeated int64 int_value = 4;
-
-  repeated float float_value = 5;
-
-  optional float min_value = 6;
-
-  optional float max_value = 7;
-
-  optional string unit_code = 8;
-}
-
-message ProductCertification {
-  optional string certification_authority = 1;
-
-  optional string certification_name = 2;
-
-  optional string certification_code = 3;
-}
-
-message ProductStructuredTitle {
-  optional string digital_source_type = 1;
-
-  optional string content = 2;
-}
-
-message ProductStructuredDescription {
-  optional string digital_source_type = 1;
-
-  optional string content = 2;
-}
+// === Merchant API v1 ProductStatus (was the Content API `productstatuses`) ===
 
 message ProductStatus {
-  optional string product_id = 1;
+  repeated DestinationStatus destination_statuses = 1;
 
-  optional string title = 2;
+  repeated ItemLevelIssue item_level_issues = 2;
 
-  optional string link = 3;
+  optional string creation_date = 3;
 
-  repeated ProductStatusDestinationStatus destination_statuses = 4;
+  optional string last_update_date = 4;
 
-  optional string kind = 5;
-
-  optional string creation_date = 6;
-
-  optional string last_update_date = 7;
-
-  optional string google_expiration_date = 8;
-
-  repeated ProductStatusItemLevelIssue item_level_issues = 10;
+  optional string google_expiration_date = 5;
 }
 
-message ProductStatusDestinationStatus {
-  optional string destination = 1;
+message DestinationStatus {
+  // Enum NAME string. Was `destination` ("Shopping"/"SurfacesAcrossGoogle"/...);
+  // now SHOPPING_ADS / FREE_LISTINGS / DEMAND_GEN_ADS / VIDEO_ADS / ...
+  optional string reporting_context = 1;
 
-  optional string status = 5 [deprecated = true];
+  repeated string approved_countries = 2;
 
-  repeated string approved_countries = 6;
+  repeated string pending_countries = 3;
 
-  repeated string pending_countries = 7;
-
-  repeated string disapproved_countries = 8;
+  repeated string disapproved_countries = 4;
 }
 
-message ProductStatusItemLevelIssue {
+message ItemLevelIssue {
   optional string code = 1;
 
-  optional string servability = 2;
+  // Was `servability`. Enum NAME string (e.g. DISAPPROVED / DEMOTED / ...).
+  optional string severity = 2;
 
   optional string resolution = 3;
 
-  optional string attribute_name = 4;
+  // Was `attribute_name`.
+  optional string attribute = 4;
 
-  optional string destination = 5;
+  // Was `destination`. Enum NAME string.
+  optional string reporting_context = 5;
 
   optional string description = 6;
 
@@ -463,64 +349,63 @@ message ProductStatusItemLevelIssue {
   repeated string applicable_countries = 9;
 }
 
-message LiaSettings {
-  optional uint64 account_id = 1;
+// Native Merchant API v1 omnichannel (Local Inventory Ads) setting -- one per
+// region, replacing the old LiaCountrySettings. Enums are stored as their NAME
+// strings (e.g. "ACTIVE", "LSF_TYPE_UNSPECIFIED", "GHLSF").
+message OmnichannelSetting {
+  optional string name = 1;
 
-  repeated LiaCountrySettings country_settings = 2;
+  optional string region_code = 2;
 
-  optional string kind = 3;
+  // LSF_TYPE_UNSPECIFIED | GHLSF | MHLSF_BASIC | MHLSF_FULL. Folds the old
+  // `hostedLocalStorefrontActive` (-> GHLSF) and `omnichannelExperience.lsfType`
+  // (-> MHLSF_BASIC / MHLSF_FULL) into a single enum.
+  optional string lsf_type = 3;
+
+  // Local product inventory feed (was `inventory.status`).
+  optional OmnichannelFeatureState in_stock = 4;
+
+  // In-store pickup (was `storePickupActive` / `omnichannelExperience.pickupType`).
+  optional OmnichannelFeatureState pickup = 5;
+
+  // POS / Local Feeds Partnership link (was `posDataProvider`).
+  optional LfpLink lfp_link = 6;
+
+  // On-display-to-order (was `onDisplayToOrder`).
+  optional OmnichannelFeatureState odo = 7;
+
+  // Merchant "about" page (was `about`).
+  optional OmnichannelFeatureState about = 8;
+
+  // Inventory-verification workflow + contact (was the
+  // `inventoryVerificationContact*` fields under `inventory`).
+  optional InventoryVerification inventory_verification = 9;
 }
 
-message LiaCountrySettings {
-  optional string country = 1;
+// Shared {uri, state} shape for in_stock / pickup / odo / about. `state` is an
+// enum NAME string: STATE_UNSPECIFIED | ACTIVE | FAILED | RUNNING | ACTION_REQUIRED.
+message OmnichannelFeatureState {
+  optional string uri = 1;
 
-  optional LiaInventorySettings inventory = 2;
-
-  optional LiaOnDisplayToOrderSettings on_display_to_order = 3;
-
-  optional bool hosted_local_storefront_active = 5;
-
-  optional bool store_pickup_active = 6;
-
-  optional LiaAboutPageSettings about = 7;
-
-  optional LiaPosDataProvider pos_data_provider = 8;
-
-  optional LiaOmnichannelExperience omnichannel_experience = 9;
+  optional string state = 2;
 }
 
-message LiaPosDataProvider {
-  optional uint64 pos_data_provider_id = 1;
+message LfpLink {
+  optional string lfp_provider = 1;
 
-  optional string pos_external_account_id = 2;
+  optional string external_account_id = 2;
+
+  optional string state = 3;
 }
 
-message LiaInventorySettings {
-  optional string status = 1;
+message InventoryVerification {
+  // STATE_UNSPECIFIED | ACTION_REQUIRED | INACTIVE | RUNNING | SUCCEEDED | SUSPENDED.
+  optional string state = 1;
 
-  optional string inventory_verification_contact_name = 2;
+  optional string contact = 2;
 
-  optional string inventory_verification_contact_email = 3;
+  optional string contact_email = 3;
 
-  optional string inventory_verification_contact_status = 4;
-}
-
-message LiaOnDisplayToOrderSettings {
-  optional string status = 1;
-
-  optional string shipping_cost_policy_url = 2;
-}
-
-message LiaAboutPageSettings {
-  optional string status = 1;
-
-  optional string url = 2;
-}
-
-message LiaOmnichannelExperience {
-  optional string country = 1;
-
-  optional string lsf_type = 2;
-
-  repeated string pickup_types = 3;
+  // STATE_UNSPECIFIED | ACTIVE | FAILED | RUNNING | ACTION_REQUIRED.
+  optional string contact_state = 4;
 }

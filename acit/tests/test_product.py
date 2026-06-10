@@ -126,7 +126,7 @@ class ProductTest(parameterized.TestCase):
   @parameterized.named_parameters(
       {
           'testcase_name': 'product_category_top_level_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {'product_attributes': {'google_product_category': 'Animals & Pet Supplies'}},
           'dimension': {
               'productCategory': {'categoryId': '1', 'level': 'LEVEL1'}
           },
@@ -134,7 +134,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_category_top_level_mismatch',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {'product_attributes': {'google_product_category': 'Animals & Pet Supplies'}},
           'dimension': {
               'productCategory': {'categoryId': '2', 'level': 'LEVEL1'}
           },
@@ -142,13 +142,13 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_category_top_level_wildcard_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {'product_attributes': {'google_product_category': 'Animals & Pet Supplies'}},
           'dimension': {'productCategory': {}},
           'expected': True,
       },
       {
           'testcase_name': 'product_brand_match',
-          'product': {'brand': 'Some Brand'},
+          'product': {'product_attributes': {'brand': 'Some Brand'}},
           'dimension': {'productBrand': {'value': 'Some Brand'}},
           'expected': True,
       },
@@ -160,7 +160,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_condition_match',
-          'product': {'condition': 'new'},
+          'product': {'product_attributes': {'condition': 'new'}},
           'dimension': {'productCondition': {'condition': 'new'}},
           'expected': True,
       },
@@ -168,9 +168,11 @@ class ProductTest(parameterized.TestCase):
       {
           'testcase_name': 'product_custom_attribute_match',
           'product': {
-              'customLabel0': 'first attribute',
-              'customLabel1': 'some attribute',
-              'customLabel4': 'ignored',
+              'product_attributes': {
+                  'custom_label_0': 'first attribute',
+                  'custom_label_1': 'some attribute',
+                  'custom_label_4': 'ignored',
+              }
           },
           'dimension': {
               # 0-indexed
@@ -184,7 +186,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_item_match',
-          'product': {'offerId': 'asdf'},
+          'product': {'offer_id': 'asdf'},
           'dimension': {'productItemId': {'value': 'asdf'}},
           'expected': True,
       },
@@ -193,11 +195,13 @@ class ProductTest(parameterized.TestCase):
           'testcase_name': 'product_type_match',
           # Ads only uses the first product type, no matter what
           'product': {
-              'productTypes': [
-                  'First type > some type > Other type',
-                  'ignored taxonomy',
-                  'some bad > > > data',
-              ]
+              'product_attributes': {
+                  'product_types': [
+                      'First type > some type > Other type',
+                      'ignored taxonomy',
+                      'some bad > > > data',
+                  ]
+              }
           },
           'dimension': {
               # 1-indexed
@@ -225,7 +229,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'basic_path_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {'product_attributes': {'google_product_category': 'Animals & Pet Supplies'}},
           'tree': {
               'children': [
                   {
@@ -248,7 +252,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'basic_path_wildcard',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {'product_attributes': {'google_product_category': 'Animals & Pet Supplies'}},
           'tree': {
               'children': [
                   {
@@ -281,7 +285,7 @@ class ProductTest(parameterized.TestCase):
   @parameterized.named_parameters(
       {
           'testcase_name': 'explicit_match',
-          'product': {'productTypes': ['my level1 type']},
+          'product': {'product_attributes': {'product_types': ['my level1 type']}},
           'node': {
               'children': [
                   {
@@ -304,7 +308,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'no_match_no_wildcard',
-          'product': {'productTypes': ['no_match_type']},
+          'product': {'product_attributes': {'product_types': ['no_match_type']}},
           'node': {
               'children': [
                   {
@@ -328,7 +332,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'match_with_wildcard',
-          'product': {'productTypes': ['my level1 type']},
+          'product': {'product_attributes': {'product_types': ['my level1 type']}},
           'node': {
               'children': [
                   {
@@ -353,7 +357,7 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'no_match_with_wildcard',
-          'product': {'productTypes': ['no_match_type']},
+          'product': {'product_attributes': {'product_types': ['no_match_type']}},
           'node': {
               'children': [
                   {

@@ -1,5 +1,7 @@
 google-ads
 google-api-python-client
+google-shopping-merchant-accounts
+google-shopping-merchant-products
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

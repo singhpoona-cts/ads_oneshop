@@ -13,25 +13,23 @@
 # limitations under the License.
 """Main ACIT data downloader."""
 
-from concurrent import futures
-import json
-import multiprocessing as mp
 import os
 import sys
-from typing import Any, Set
+from typing import Set
 
 from absl import app
 from absl import flags
 from absl import logging
 from acit import gaql
-from acit import resource_downloader
+from acit import merchant_accounts
+from acit import merchant_lia
+from acit import merchant_products
+from acit import merchant_shipping
 from etils import epath
 from google import auth
 from google.ads.googleads import client
 from google.auth import credentials
 from google.oauth2 import credentials as oauth_credentials
-from googleapiclient import discovery
-from googleapiclient import http
 
 
 if sys.version_info < (3, 9, 0):
@@ -224,27 +222,16 @@ _ACIT_ADS_OUTPUT_DIR = 'ads'
 
 _ACIT_MC_OUTPUT_DIR = 'merchant_center'
 
-# Leaf-only resources
-_ACIT_MC_RESOURCES = [
-    'products',
-    'productstatuses',
-]
-
-_ACIT_MC_ACCOUNT_RESOURCE = 'accounts'
-_ACIT_MC_SHIPPINGSETTINGS_RESOURCE = 'shippingsettings'
-
-# Rolled-down settings.
-# Each resultant file will have exactly one entry.
-# If that entry is from an MCA, it will have a 'children' key.
-_ACIT_ACCOUNT_RESOURCES = [
-    _ACIT_MC_ACCOUNT_RESOURCE,
-]
-
-# Additional resources which are only available to admins.
-_ACIT_ACCOUNT_ADMIN_RESOURCES = [
-    'liasettings',
-    _ACIT_MC_SHIPPINGSETTINGS_RESOURCE,
-]
+# NOTE: ALL Merchant Center resources are now pulled from the Merchant API
+# (stable v1), not the Content API. Accounts (Phase 1) via `merchant_accounts`,
+# products (Phase 2) via `merchant_products`, LIA/omnichannel settings (Phase 3)
+# via `merchant_lia`, and shipping settings (Phase 4) via `merchant_shipping` --
+# all in the native v1 shape. `shippingsettings` was the last Content API
+# resource, so the Content API client (`discovery.build('content', 'v2.1')`) and
+# the MCA roll-down machinery have been removed entirely. v1 has no MCA roll-down
+# and aggregators are not valid targets, so the per-(sub)account fan-out modules
+# query subaccounts/standalone accounts directly. `shippingsettings` remains
+# admin-gated, matching the old behavior.
 
 
 def _get_credentials() -> credentials.Credentials:
@@ -267,87 +254,6 @@ def _get_credentials() -> credentials.Credentials:
     )
 
 
-def _get_merchant_center_api() -> Any:
-  """Get Merchant Center API client. Factory.
-
-  Returns:
-    The Merchant Center API client.
-  """
-
-  creds = _get_credentials()
-
-  merchant_api = discovery.build('content', 'v2.1', credentials=creds)
-  return merchant_api
-
-
-def _pull_standalone_account_resource(
-    acit_mc_output_dir, parent_id, account_id, resource
-) -> None:
-  merchant_api = _get_merchant_center_api()
-  logging.info('...pulling standalone account-level resource %s...', resource)
-  output_file = (
-      epath.Path(acit_mc_output_dir) / account_id / resource / 'rows.jsonlines'
-  )
-  output_file.parent.mkdir(parents=True, exist_ok=True)
-  with output_file.open(mode='w') as f:
-    try:
-      for result in resource_downloader.download_resources(
-          client=merchant_api,
-          resource_name=resource,
-          params={
-              'merchantId': parent_id,
-              'accountId': account_id,
-          },
-          parent_resource='',
-          parent_params={},
-          resource_method='get',
-          result_path='',
-          metadata={'accountId': account_id},
-          is_scalar=True,
-      ):
-        d = {
-            'settings': result,
-            'children': [],
-        }
-        print(json.dumps(d), file=f)
-    except http.HttpError as e:
-      if (
-          str(e.status_code) == '404'
-          and resource == _ACIT_MC_SHIPPINGSETTINGS_RESOURCE
-      ):
-        logging.warning(
-            (
-                'Unable to find shipping settings for account %s. '
-                "It's possible no such setting exists."
-            )
-            % account_id
-        )
-      else:
-        raise e
-
-
-def _pull_leaf_collection(acit_mc_output_dir, account_id, resource):
-  merchant_api = _get_merchant_center_api()
-  logging.info('...pulling resource %s...', resource)
-  output_file = (
-      epath.Path(acit_mc_output_dir) / account_id / resource / 'rows.jsonlines'
-  )
-  output_file.parent.mkdir(parents=True, exist_ok=True)
-  with output_file.open(mode='w') as f:
-    for result in resource_downloader.download_resources(
-        client=merchant_api,
-        resource_name=resource,
-        # Yes, 'merchantId' is inconsistent with the rest of the API.
-        params={'merchantId': account_id, 'maxResults': 250},
-        parent_resource='',
-        parent_params={},
-        resource_method='list',
-        result_path='resources',
-        metadata={'accountId': account_id},
-    ):
-      print(json.dumps(result), file=f)
-
-
 def _parse_login_customer_ids(customer_ids: list[str]) -> list[tuple[str, str]]:
   """Extracts login_customer_id:customer_id pairs from input.
 
@@ -366,44 +272,6 @@ def _parse_login_customer_ids(customer_ids: list[str]) -> list[tuple[str, str]]:
     customer_id = rest[0] if rest else login_cid
     login_cid_pairs.append((login_cid, customer_id))
   return login_cid_pairs
-
-
-def _list_mca_resource(resource_name, aggregator_id, merchant_api, mc_path):
-  """Lists a resource for an MCA, including all sub-accounts.
-
-  Args:
-    resource_name: The name of the resource to list.
-    aggregator_id: The ID of the MCA.
-    merchant_api: The Merchant Center API client.
-    mc_path: The path to the Merchant Center output directory.
-  """
-  logging.info('Fetching account-level resource %s...', resource_name)
-  parent = {
-      'settings': {
-          'accountId': aggregator_id,
-      },
-      'children': [],
-  }
-
-  for response in resource_downloader.download_resources(
-      client=merchant_api,
-      resource_name=resource_name,
-      # Required to duplicate here
-      params={'merchantId': aggregator_id},
-      parent_resource='',
-      parent_params={},
-      resource_method='list',
-      result_path='resources',
-      metadata={'accountId': aggregator_id},
-      is_scalar=False,
-  ):
-    parent['children'].append({'settings': response})
-
-  output_file = mc_path / aggregator_id / resource_name / 'rows.jsonlines'
-
-  output_file.parent.mkdir(parents=True, exist_ok=True)
-  with output_file.open('w') as f:
-    print(json.dumps(parent), file=f)
 
 
 def main(_):
@@ -494,125 +362,44 @@ def main(_):
   # dealing with.
 
   input_ids = set(_MERCHANT_CENTER_IDS.value)
-  # Preload Merchant Center authinfo so we know which accounts (for this
-  # user) are top-level.
-  # The sets of accessible aggregators and standlone accounts
-  merchant_api = _get_merchant_center_api()
-  aggregator_ids: Set[str] = set()
-  standalone_ids: Set[str] = set()
-  # All leaf accounts we will actually process
-  leaf_ids: Set[str] = set()
 
-  leaf_to_parent = {}
+  # Phase 1 migration: the `accounts` resource is now ingested from the Merchant
+  # API (stable v1) instead of the Content API. This writes the flat, native-v1
+  # per-account files and returns the account topology (advanced/MCA vs
+  # standalone, plus the sub-account -> parent mapping) that drives the per-
+  # account Merchant API pulls below.
+  aggregator_ids, standalone_ids, leaf_to_parent = (
+      merchant_accounts.download_accounts(creds, input_ids, mc_path)
+  )
+  # All leaf (sub-) accounts we will actually process for product-level data.
+  leaf_ids: Set[str] = set(leaf_to_parent)
 
-  for result in resource_downloader.download_resources(
-      client=merchant_api,
-      resource_name='accounts',
-      params={},
-      parent_resource='',
-      parent_params={},
-      resource_method='authinfo',
-      result_path='',
-      metadata={},
-      is_scalar=True,
-  ):
-    for account_identifier in result.get('accountIdentifiers', []):
-      # Users may only be present in one account.
-      # Aggregator IDs are optional in leaves.
-      # We must check for merchantId first.
-      if 'merchantId' in account_identifier:
-        standalone_ids.add(account_identifier['merchantId'])
-      else:
-        aggregator_ids.add(account_identifier['aggregatorId'])
+  product_account_ids = leaf_ids | (standalone_ids & input_ids)
 
-  # Decide which resources to pull
-  acit_account_resources = _ACIT_ACCOUNT_RESOURCES
+  # Phase 2 migration: products are ingested from the Merchant API (stable v1)
+  # instead of the Content API. The v1 `Product` already carries its status, so
+  # there is no separate `productstatuses` pull. This writes the native-v1 per-
+  # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
+  # unchanged); the Beam stage splits out status and derives the channel.
+  merchant_products.download_products(creds, product_account_ids, mc_path)
+
+  # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
+  # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
+  # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
+  # we list per (sub)account directly (same account set as products). Admin-gated,
+  # matching the old `liasettings` pull.
   if _ADMIN_RIGHTS.value:
-    acit_account_resources += _ACIT_ACCOUNT_ADMIN_RESOURCES
+    merchant_lia.download_omnichannel_settings(creds, product_account_ids, mc_path)
 
-  # Top-level settings must roll down  (if they exist) from MCAs.
-  # Top-level settings include image enhancement, LIA, Ads links, etc
-  # This significantly complicates the data model (especially for Ads links)
-  for aggregator_id in aggregator_ids.intersection(input_ids):
-    for name in acit_account_resources:
-      if name == _ACIT_MC_SHIPPINGSETTINGS_RESOURCE:
-        # shippingsettings has a different behavior and is treated differently
-        _list_mca_resource(name, aggregator_id, merchant_api, mc_path)
-        continue
-      logging.info('Fetching account-level resource %s...', name)
-      for response in resource_downloader.download_resources(
-          client=merchant_api,
-          resource_name=name,
-          # Required to duplicate here
-          params={'merchantId': aggregator_id, 'accountId': aggregator_id},
-          parent_resource='',
-          parent_params={},
-          resource_method='get',
-          result_path='',
-          metadata={'accountId': aggregator_id},
-          is_scalar=True,
-      ):
-        children = []
-        # This key will only be set on MCA account-level metrics
-        parent = {'settings': response}
-        parent['children'] = children
-
-        logging.info('Fetching subaccount resources %s...', name)
-        for child in resource_downloader.download_resources(
-            client=merchant_api,
-            resource_name=name,
-            params={'merchantId': aggregator_id},
-            parent_resource='',
-            parent_params={},
-            resource_method='list',
-            result_path='resources',
-            metadata={'parentId': aggregator_id},
-        ):
-          children.append(child)
-          if name == _ACIT_MC_ACCOUNT_RESOURCE:
-            leaf_to_parent[child['id']] = aggregator_id
-            leaf_ids.add(child['id'])
-
-        # Wait until the end so the parent has all children
-        output_file = mc_path / aggregator_id / name / 'rows.jsonlines'
-
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        with output_file.open('w') as f:
-          print(json.dumps(parent), file=f)
-
-  # Process all non-aggregator account data in parallel
-  with futures.ProcessPoolExecutor(
-      mp_context=mp.get_context('spawn')
-  ) as executor:
-    future_results: dict[futures.Future[None], str] = {}
-    for account_id in leaf_ids | (standalone_ids & input_ids):
-      logging.info('Processing Merchant Center ID %s...', account_id)
-      # We need account-level resources
-      parent_id = leaf_to_parent.get(account_id, account_id)
-      for resource in acit_account_resources:
-        if account_id in standalone_ids:
-          future = executor.submit(
-              _pull_standalone_account_resource,
-              str(mc_path),
-              parent_id,
-              account_id,
-              resource,
-          )
-          future_results[future] = f'{parent_id}/{resource}/{account_id}'
-
-      for resource in _ACIT_MC_RESOURCES:
-        future = executor.submit(
-            _pull_leaf_collection, str(mc_path), account_id, resource
-        )
-        future_results[future] = f'{parent_id}/{resource}/{account_id}'
-
-    for completed in futures.as_completed(future_results):
-      api_path = future_results[completed]
-      try:
-        completed.result()
-        logging.info('Finished loading leaf resource: %s', api_path)
-      except http.HttpError as ex:
-        raise ValueError('Error retrieving resource %s' % api_path) from ex
+  # Phase 4 migration: shipping settings come from the Merchant API (stable v1)
+  # `ShippingSettings` instead of the Content API `shippingsettings`. v1 has no
+  # MCA roll-down and the aggregator itself is not a valid target, so we fetch
+  # per (sub)account directly (same account set as products). Admin-gated,
+  # matching the old `shippingsettings` pull. This was the last Content API
+  # resource.
+  if _ADMIN_RIGHTS.value:
+    merchant_shipping.download_shipping_settings(
+        creds, product_account_ids, mc_path)
 
   unprocessed = input_ids - (leaf_ids | standalone_ids | aggregator_ids)
   if unprocessed:

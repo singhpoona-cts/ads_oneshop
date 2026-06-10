@@ -73,26 +73,37 @@ def build_campaign(
   return []
 
 
+def _attrs(product):
+  """Returns the native v1 `product_attributes` sub-dict (or empty)."""
+  return product.get('product_attributes') or {}
+
+
 def set_product_in_stock(product):
   """Sets a key on the composite product status for product availability."""
-  product['inStock'] = 'in stock' == product['product'].get('availability', '')
+  # v1 `availability` is an enum NAME string (was the lower-case "in stock").
+  product['inStock'] = 'IN_STOCK' == _attrs(product['product']).get(
+      'availability', ''
+  )
   return product
 
 
 def set_product_approved(product):
   """Sets a key depending on whether the offer is approved in all locations."""
-  # NOTE: Everything that can be targeted is always 'Shopping"
+  # NOTE: Everything that can be targeted is always Shopping (v1: SHOPPING_ADS).
+  # v1 folds status into the product; `status` is the split-out `product_status`
+  # with snake_case fields and `reporting_context` (was `destination`).
   destinations = [
       d
-      for d in product['status'].get('destinationStatuses', [])
-      if d['destination'] == 'Shopping'
+      for d in product['status'].get('destination_statuses', [])
+      if d.get('reporting_context') == 'SHOPPING_ADS'
   ]
   # Should only be one
   for destination in destinations:
     # Must not modify Beam inputs, so make a copy
     result = {**product}
-    for k in ('approvedCountries', 'pendingCountries', 'disapprovedCountries'):
-      result[k] = destination.get(k, [])
+    result['approvedCountries'] = destination.get('approved_countries', [])
+    result['pendingCountries'] = destination.get('pending_countries', [])
+    result['disapprovedCountries'] = destination.get('disapproved_countries', [])
     return result
   return product
 
@@ -164,12 +175,14 @@ def dimension_matches_product(
   if dimension_is_wildcard(dimension):
     return True
 
+  attributes = _attrs(product)
+
   if 'productCategory' in dimension:
     level = dimension['productCategory']['level']
     id_ = dimension['productCategory']['categoryId']
 
     taxonomy_index = _PRODUCT_DIMENSION_LEVELS.index(level)
-    taxonomy_tokens = product.get('googleProductCategory', '').split(' > ')
+    taxonomy_tokens = attributes.get('google_product_category', '').split(' > ')
     if not taxonomy_index < len(taxonomy_tokens):
       # Ad criteria is too granular
       return False
@@ -186,9 +199,11 @@ def dimension_matches_product(
   if 'productBrand' in dimension:
     return (
         dimension['productBrand']['value'].lower()
-        == product.get('brand', '').lower()
+        == attributes.get('brand', '').lower()
     )
   if 'productChannel' in dimension:
+    # `channel` is derived (online/local) from the v1 `legacy_local` flag and
+    # set on the product in the Beam stage.
     return (
         dimension['productChannel']['channel'].lower()
         == product.get('channel', '').lower()
@@ -197,25 +212,28 @@ def dimension_matches_product(
   #       within the same feed label and language have only online or
   #       offline offers. This needs to be injected further up.
   #       For now (the setting seems rare), assume multichannel.
+  #       (The Merchant API v1 Product no longer exposes channel exclusivity.)
   if 'productChannelExclusivity' in dimension:
     return (
         dimension['productChannelExclusivity']['channelExclusivity'].lower()
         == product.get('channelExclusivity', 'MULTI_CHANNEL').lower()
     )
   if 'productCondition' in dimension:
+    # v1 `condition` is an enum NAME string (NEW/USED/REFURBISHED); lower-cased
+    # it matches the Ads dimension value (new/used/refurbished).
     return (
         dimension['productCondition']['condition'].lower()
-        == product.get('condition', '').lower()
+        == attributes.get('condition', '').lower()
     )
   if 'productCustomAttribute' in dimension:
     info = dimension['productCustomAttribute']
     depth = _PRODUCT_DIMENSION_INDICES.index(info['index'])
-    product_label = product.get(f'customLabel{depth}', '')
+    product_label = attributes.get(f'custom_label_{depth}', '')
     return info['value'].lower() == product_label.lower()
   if 'productItemId' in dimension:
     return (
         dimension['productItemId']['value'].lower()
-        == product['offerId'].lower()
+        == product['offer_id'].lower()
     )
   # TODO: Fix. Product Type is a freetext field within MC.
   #       There's an edge case where data is bad, and ">" does not
@@ -223,7 +241,7 @@ def dimension_matches_product(
   if 'productType' in dimension:
     return taxonomy_matches_dimension(
         # Always get the first one
-        (product.get('productTypes', []) or [''])[0],
+        (attributes.get('product_types', []) or [''])[0],
         dimension,
         'productType',
         'level',
@@ -347,7 +365,7 @@ def campaign_matches_product_status(
   if campaign['merchant_id'] != product_status['accountId']:
     return False
   campaign_label = campaign['feed_label'].lower()
-  if campaign_label and campaign_label != product['feedLabel'].lower():
+  if campaign_label and campaign_label != product['feed_label'].lower():
     return False
   if not campaign['enable_local'] and product['channel'] == 'local':
     return False
@@ -369,10 +387,10 @@ def campaign_matches_product_status(
 
   if (
       positive_languages
-      and product['contentLanguage'] not in positive_languages
+      and product['content_language'] not in positive_languages
   ):
     return False
-  if product['contentLanguage'] in negative_languages:
+  if product['content_language'] in negative_languages:
     return False
   return True
 
