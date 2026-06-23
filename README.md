@@ -9,7 +9,7 @@ By implementing these recommendations, merchants can improve offer quality,
 reduce disapprovals, increase advanced feature adoption and drive better auction
 performance.
 
-This solution currently uses the Content API, and needs to be updated to work with the [Merchant API](https://developers.google.com/merchant/api/reference/rest). We're currently working to update Merchant Excellence for Partners to work with Merchant API. Launch date in H1 2026.
+This solution uses the [Merchant API](https://developers.google.com/merchant/api/reference/rest).
 
 ### Solutions Included
 
@@ -49,6 +49,12 @@ The Ads OneShop project contains two solutions:
 
 *   At least standard access to the Merchant Center account, but Admin is preferable, as it would allow more data to be ingested.
 *   Google Ads & Google Merchant Center accounts must be linked together.
+
+#### Merchant API
+
+*   Enable the [Merchant API](https://console.cloud.google.com/apis/library/merchantapi.googleapis.com) in your Google Cloud project.
+*   Authorize access using OAuth 2.0 with the `https://www.googleapis.com/auth/content` scope. See the [Merchant API authorization overview](https://developers.google.com/merchant/api/guides/authorization/overview) for details.
+*   **Register your Google Cloud project with the Merchant Center account.** The Merchant API requires the Cloud project used for authentication to be registered with your Merchant Center account (a one-time setup via the [developer registration](https://developers.google.com/merchant/api/guides/quickstart/registration) `registerGcp` call). This must be done by a user with **Admin** access, and each Cloud project can be registered with only one Merchant Center account.
 
 ### Core Pipeline Deployment
 
