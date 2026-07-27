@@ -238,13 +238,16 @@ def discover_topology(clients: _Clients, input_ids):
   return aggregator_ids, standalone_ids, leaf_to_parent, cores
 
 
-def download_accounts(credentials, input_ids, mc_path):
+def download_accounts(credentials, input_ids, mc_path, max_workers=_MAX_WORKERS):
   """Downloads accounts from Merchant API v1 and writes flat per-account files.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
     input_ids: iterable of top-level Merchant Center account IDs.
     mc_path: epath.Path to the merchant_center output directory.
+    max_workers: max concurrent account downloads. Callers (namely `acit.py`)
+      should pass this explicitly so it stays consistent with the other
+      Merchant API ingestion stages.
 
   Returns:
     (aggregator_ids, standalone_ids, leaf_to_parent) topology for reuse by the
@@ -267,7 +270,7 @@ def download_accounts(credentials, input_ids, mc_path):
       f.write(json.dumps(record) + '\n')
     return account_id
 
-  with futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
+  with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
     future_to_id = {ex.submit(_process, aid): aid for aid in cores}
     for done in futures.as_completed(future_to_id):
       aid = future_to_id[done]

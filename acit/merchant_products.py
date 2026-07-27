@@ -76,9 +76,19 @@ def _to_dict(msg):
 
 
 def _list_leaf_products(client, account_id):
-  """Lists all v1 products for one leaf account, as native-shape dicts."""
+  """Yields all v1 products for one leaf account, as native-shape dicts.
+
+  This is a *generator*, deliberately. The GAPIC pager already fetches pages
+  lazily, so yielding each product as it is converted keeps peak memory at
+  roughly one product per worker thread. Accumulating into a list instead would
+  hold the entire catalog at once -- a large merchant can have millions of
+  products, and with `_MAX_WORKERS` accounts downloading concurrently that is an
+  OOM rather than a slowdown.
+
+  Callers must therefore consume the result exactly once, while streaming it to
+  its destination (see `download_products._process`).
+  """
   parent = f'accounts/{account_id}'
-  rows = []
   pager = _retry(
       lambda: client.list_products(
           request=mp.ListProductsRequest(parent=parent, page_size=_PAGE_SIZE)),
@@ -95,33 +105,39 @@ def _list_leaf_products(client, account_id):
       break
     d = _to_dict(product)
     d[METADATA_KEY] = {'accountId': account_id}
-    rows.append(d)
-  return rows
+    yield d
 
 
-def download_products(credentials, account_ids, mc_path):
+def download_products(credentials, account_ids, mc_path, max_workers=_MAX_WORKERS):
   """Downloads products from Merchant API v1 and writes per-account files.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
     account_ids: iterable of leaf/standalone Merchant Center account IDs to pull.
     mc_path: epath.Path to the merchant_center output directory.
+    max_workers: max concurrent account downloads. Callers (namely `acit.py`)
+      should pass this explicitly so it stays consistent with the other
+      Merchant API ingestion stages.
   """
   client = mp.ProductsServiceClient(credentials=credentials)
   account_ids = list(account_ids)
 
   def _process(account_id):
-    rows = _list_leaf_products(client, account_id)
     output_file = (
         epath.Path(mc_path) / account_id / 'products' / 'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Stream page-by-page straight to disk rather than materializing the
+    # account's whole catalog first; `_list_leaf_products` is a generator and
+    # must be consumed lazily to keep that guarantee.
+    count = 0
     with output_file.open('w') as f:
-      for row in rows:
+      for row in _list_leaf_products(client, account_id):
         f.write(json.dumps(row) + '\n')
-    return account_id, len(rows)
+        count += 1
+    return account_id, count
 
   total = 0
-  with futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
+  with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
     future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
     for done in futures.as_completed(future_to_id):
       account_id, n = done.result()  # surface exceptions

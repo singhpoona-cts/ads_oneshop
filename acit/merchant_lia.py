@@ -120,7 +120,8 @@ def _list_account_omnichannel(client, account_id):
   return rows
 
 
-def download_omnichannel_settings(credentials, account_ids, mc_path):
+def download_omnichannel_settings(
+    credentials, account_ids, mc_path, max_workers=_MAX_WORKERS):
   """Downloads omnichannel/LIA settings from Merchant API v1, one file per account.
 
   Args:
@@ -128,6 +129,9 @@ def download_omnichannel_settings(credentials, account_ids, mc_path):
     account_ids: iterable of sub-/standalone Merchant Center account IDs to pull.
       (Aggregators are skipped automatically -- they are not valid parents.)
     mc_path: epath.Path to the merchant_center output directory.
+    max_workers: max concurrent account downloads. Callers (namely `acit.py`)
+      should pass this explicitly so it stays consistent with the other
+      Merchant API ingestion stages.
   """
   client = ma.OmnichannelSettingsServiceClient(credentials=credentials)
   account_ids = list(account_ids)
@@ -151,7 +155,7 @@ def download_omnichannel_settings(credentials, account_ids, mc_path):
     return account_id, len(rows)
 
   total = 0
-  with futures.ThreadPoolExecutor(max_workers=_MAX_WORKERS) as ex:
+  with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
     future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
     for done in futures.as_completed(future_to_id):
       account_id, n = done.result()  # surface exceptions

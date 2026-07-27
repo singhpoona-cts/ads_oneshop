@@ -72,6 +72,16 @@ _VALIDATE_ONLY = flags.DEFINE_boolean(
     'validate_only', False, 'Whether to validate GAQL queries only.'
 )
 
+_MC_MAX_WORKERS = flags.DEFINE_integer(
+    'mc_max_workers',
+    8,
+    (
+        'Max concurrent worker threads used by each Merchant API v1 '
+        'ingestion stage (accounts, products, LIA, shipping). Passed '
+        'explicitly to every stage so they stay consistent with each other.'
+    ),
+)
+
 # NOTE: Always add customer.id to a query for uniqueness.
 
 # NOTE: Merchant Center FK has the form of channel:language:feed_label:item_id
@@ -369,7 +379,8 @@ def main(_):
   # standalone, plus the sub-account -> parent mapping) that drives the per-
   # account Merchant API pulls below.
   aggregator_ids, standalone_ids, leaf_to_parent = (
-      merchant_accounts.download_accounts(creds, input_ids, mc_path)
+      merchant_accounts.download_accounts(
+          creds, input_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
   )
   # All leaf (sub-) accounts we will actually process for product-level data.
   leaf_ids: Set[str] = set(leaf_to_parent)
@@ -381,7 +392,8 @@ def main(_):
   # there is no separate `productstatuses` pull. This writes the native-v1 per-
   # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
   # unchanged); the Beam stage splits out status and derives the channel.
-  merchant_products.download_products(creds, product_account_ids, mc_path)
+  merchant_products.download_products(
+      creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
 
   # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
   # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
@@ -389,7 +401,8 @@ def main(_):
   # we list per (sub)account directly (same account set as products). Admin-gated,
   # matching the old `liasettings` pull.
   if _ADMIN_RIGHTS.value:
-    merchant_lia.download_omnichannel_settings(creds, product_account_ids, mc_path)
+    merchant_lia.download_omnichannel_settings(
+        creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
 
   # Phase 4 migration: shipping settings come from the Merchant API (stable v1)
   # `ShippingSettings` instead of the Content API `shippingsettings`. v1 has no
@@ -399,7 +412,7 @@ def main(_):
   # resource.
   if _ADMIN_RIGHTS.value:
     merchant_shipping.download_shipping_settings(
-        creds, product_account_ids, mc_path)
+        creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
 
   unprocessed = input_ids - (leaf_ids | standalone_ids | aggregator_ids)
   if unprocessed:
