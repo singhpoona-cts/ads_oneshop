@@ -11,10 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Merchant Center product data helpers."""
+"""Merchant Center product data helpers (strongly typed via Protobuf)."""
 
+from typing import Any, Callable, Iterable, List, Optional, Tuple, TypedDict
+from acit.api.v0.storage import schema_pb2
+from google.shopping import merchant_products_v1 as mp
+from google.shopping import type as gst
 
-from typing import Optional, Dict, Tuple, List, Callable, Any, TypedDict, Iterable
+_SHOPPING_ADS = gst.ReportingContext.ReportingContextEnum.SHOPPING_ADS
 
 # 1-indexed dimension levels
 _PRODUCT_DIMENSION_LEVELS = [
@@ -52,7 +56,7 @@ class Campaign(TypedDict):
 
 
 def build_campaign(
-    campaign,
+    campaign: dict[str, Any],
     languages: list[TargetedLanguage],
     inventory_filter_dimensions: list[Any],
 ) -> Iterable[Campaign]:
@@ -73,28 +77,54 @@ def build_campaign(
   return []
 
 
-def set_product_in_stock(product):
+def _get_attributes(
+    product: schema_pb2.WideProduct,
+) -> mp.ProductAttributes:
+  """Returns the offer attributes embedded in a WideProduct.
+
+  Args:
+    product: The wide product record to read from.
+
+  Returns:
+    The `product_attributes` submessage. Proto3 yields an empty message rather
+    than None when it was never set.
+  """
+  return product.product.product_attributes
+
+
+def set_product_in_stock(
+    product: schema_pb2.WideProduct,
+) -> schema_pb2.WideProduct:
   """Sets a key on the composite product status for product availability."""
-  product['inStock'] = 'in stock' == product['product'].get('availability', '')
-  return product
+  product_copy = schema_pb2.WideProduct()
+  product_copy.CopyFrom(product)
+  attributes = _get_attributes(product_copy)
+  product_copy.in_stock = (
+      attributes.availability == mp.Availability.IN_STOCK)
+  return product_copy
 
 
-def set_product_approved(product):
+def set_product_approved(
+    product: schema_pb2.WideProduct,
+) -> schema_pb2.WideProduct:
   """Sets a key depending on whether the offer is approved in all locations."""
-  # NOTE: Everything that can be targeted is always 'Shopping"
+  product_copy = schema_pb2.WideProduct()
+  product_copy.CopyFrom(product)
   destinations = [
       d
-      for d in product['status'].get('destinationStatuses', [])
-      if d['destination'] == 'Shopping'
+      for d in product_copy.status.destination_statuses
+      if d.reporting_context == _SHOPPING_ADS
   ]
-  # Should only be one
   for destination in destinations:
-    # Must not modify Beam inputs, so make a copy
-    result = {**product}
-    for k in ('approvedCountries', 'pendingCountries', 'disapprovedCountries'):
-      result[k] = destination.get(k, [])
-    return result
-  return product
+    del product_copy.approved_countries[:]
+    del product_copy.pending_countries[:]
+    del product_copy.disapproved_countries[:]
+    product_copy.approved_countries.extend(destination.approved_countries)
+    product_copy.pending_countries.extend(destination.pending_countries)
+    product_copy.disapproved_countries.extend(
+        destination.disapproved_countries)
+    break
+  return product_copy
 
 
 def taxonomy_matches_dimension(
@@ -107,8 +137,8 @@ def taxonomy_matches_dimension(
 ) -> bool:
   """Whether the given taxonomy string matches the input dimension.
 
-  Taxonomy strings are used for Google Product Categories and user-provided types.
-  They are of the form "A > B > C".
+  Taxonomy strings are used for Google Product Categories and
+  user-provided types. They are of the form "A > B > C".
 
   This method looks at the expected level of the dimension, and truncates (as
   necessary) the taxonomy string to only that many levels, useful when recursing
@@ -150,7 +180,7 @@ _WILDCARD_DIMENSION_PATHS = {
 }
 
 
-def dimension_is_wildcard(dimension) -> bool:
+def dimension_is_wildcard(dimension: dict[str, Any]) -> bool:
   for key, sub_key in _WILDCARD_DIMENSION_PATHS.items():
     if key in dimension:
       return sub_key not in dimension[key]
@@ -158,18 +188,33 @@ def dimension_is_wildcard(dimension) -> bool:
 
 
 def dimension_matches_product(
-    product: Any, dimension: Any, category_names_by_id: dict[str, str]
-):
-  """Whether the provided dimension matches the product."""
+    product: schema_pb2.WideProduct,
+    dimension: dict[str, Any],
+    category_names_by_id: dict[str, str],
+) -> bool:
+  """Whether the provided dimension matches the product.
+
+  Args:
+    product: The wide product record to test.
+    dimension: One `ListingGroupDimension` from a Google Ads listing group or
+      asset group filter. Google Ads JSON, so the keys are camelCase.
+    category_names_by_id: Google product category ID to US English name.
+
+  Returns:
+    Whether this dimension matches the product.
+  """
   if dimension_is_wildcard(dimension):
     return True
+
+  attributes = _get_attributes(product)
 
   if 'productCategory' in dimension:
     level = dimension['productCategory']['level']
     id_ = dimension['productCategory']['categoryId']
 
     taxonomy_index = _PRODUCT_DIMENSION_LEVELS.index(level)
-    taxonomy_tokens = product.get('googleProductCategory', '').split(' > ')
+    google_product_category = attributes.google_product_category
+    taxonomy_tokens = google_product_category.split(' > ')
     if not taxonomy_index < len(taxonomy_tokens):
       # Ad criteria is too granular
       return False
@@ -178,52 +223,57 @@ def dimension_matches_product(
     if id_ not in category_names_by_id:
       return False
     category = category_names_by_id[id_]
-    return category_to_match == category
+    return bool(category_to_match == category)
 
   # All string comparisons should be case-insensitive
   # Ads and MC have inconsistent case processing.
 
   if 'productBrand' in dimension:
-    return (
+    brand = attributes.brand
+    return bool(
         dimension['productBrand']['value'].lower()
-        == product.get('brand', '').lower()
+        == brand.lower()
     )
   if 'productChannel' in dimension:
-    return (
+    # `channel` is derived (online/local) from the v1 `legacy_local` flag and
+    # set at the root of the WideProduct in the Beam stage.
+    return bool(
         dimension['productChannel']['channel'].lower()
-        == product.get('channel', '').lower()
+        == product.channel.lower()
     )
-  # TODO: Channel exclusivity requires checking whether two offers IDs
-  #       within the same feed label and language have only online or
-  #       offline offers. This needs to be injected further up.
-  #       For now (the setting seems rare), assume multichannel.
   if 'productChannelExclusivity' in dimension:
-    return (
+    # Google API Product does not expose channel exclusivity anymore, assume
+    # MULTI_CHANNEL.
+    return bool(
         dimension['productChannelExclusivity']['channelExclusivity'].lower()
-        == product.get('channelExclusivity', 'MULTI_CHANNEL').lower()
+        == 'multi_channel'
     )
   if 'productCondition' in dimension:
-    return (
+    # v1 `condition` is an enum NAME string (NEW/USED/REFURBISHED); lower-cased
+    # it matches the Ads dimension value (new/used/refurbished).
+    condition = mp.Condition(attributes.condition).name
+    return bool(
         dimension['productCondition']['condition'].lower()
-        == product.get('condition', '').lower()
+        == condition.lower()
     )
   if 'productCustomAttribute' in dimension:
     info = dimension['productCustomAttribute']
     depth = _PRODUCT_DIMENSION_INDICES.index(info['index'])
-    product_label = product.get(f'customLabel{depth}', '')
-    return info['value'].lower() == product_label.lower()
+    product_label = getattr(attributes, f'custom_label_{depth}', '')
+    return bool(info['value'].lower() == product_label.lower())
   if 'productItemId' in dimension:
-    return (
+    # `split_v1_product` lifts the offer ID to the root of the WideProduct;
+    # fall back to the embedded Product for records written before that.
+    offer_id = product.offer_id or product.product.offer_id
+    return bool(
         dimension['productItemId']['value'].lower()
-        == product['offerId'].lower()
+        == offer_id.lower()
     )
-  # TODO: Fix. Product Type is a freetext field within MC.
-  #       There's an edge case where data is bad, and ">" does not
-  #       adequately delimit. So "A > B > > > C" is [A, B, >, C].
   if 'productType' in dimension:
+    product_types = list(attributes.product_types)
+    first_type = product_types[0] if product_types else ''
     return taxonomy_matches_dimension(
-        # Always get the first one
-        (product.get('productTypes', []) or [''])[0],
+        first_type,
         dimension,
         'productType',
         'level',
@@ -258,7 +308,8 @@ class ProductTargetingTree(TypedDict):
   Attributes:
     customer_id: The Customer ID
     campaign_id: The Campaign ID
-    tree_parent_id: For Shopping Campaigns, the ad_group_id; for Performance Max, the asset_group_id.
+    tree_parent_id: For Shopping Campaigns, the ad_group_id;
+    for Performance Max, the asset_group_id.
   """
 
   customer_id: str
@@ -268,9 +319,20 @@ class ProductTargetingTree(TypedDict):
 
 
 def product_targeted_by_tree(
-    product, node: ProductTargetingNode, category_names_by_id: dict[str, str]
+    product: schema_pb2.WideProduct,
+    node: ProductTargetingNode,
+    category_names_by_id: dict[str, str]
 ) -> bool:
-  """Recursively checks whether a product is targeted by a tree."""
+  """Recursively checks whether a product is targeted by a tree.
+
+  Args:
+    product: The wide product record to test.
+    node: The tree node to descend from; the root on the first call.
+    category_names_by_id: Google product category ID to US English name.
+
+  Returns:
+    Whether the product is targeted by the leaf this tree resolves to.
+  """
   is_targeted = node.get('isTargeted')
   if is_targeted is not None:
     return is_targeted
@@ -306,7 +368,7 @@ def product_targeted_by_tree(
 
 def build_product_group_tree(
     dimensions: List[Any], node: ProductTargetingNode, is_targeted: bool
-):
+) -> None:
   """Recusively builds a ProductTargeting Tree.
 
   A Product Targeting tree is either a Listing Group for shopping ads,
@@ -338,75 +400,95 @@ def build_product_group_tree(
 
 def campaign_matches_product_status(
     campaign: Campaign,
-    product_status,
-    category_names_by_id,
-    language_codes_by_resource_name,
+    product_status: schema_pb2.WideProduct,
+    category_names_by_id: dict[str, str],
+    language_codes_by_resource_name: dict[str, str],
 ) -> bool:
-  # TODO: unit test this
-  product = product_status['product']
-  if campaign['merchant_id'] != product_status['accountId']:
-    return False
-  campaign_label = campaign['feed_label'].lower()
-  if campaign_label and campaign_label != product['feedLabel'].lower():
-    return False
-  if not campaign['enable_local'] and product['channel'] == 'local':
-    return False
-  for dimension in campaign['inventory_filter_dimensions']:
-    if not dimension_matches_product(product, dimension, category_names_by_id):
+    """Determines if a campaign's targeting criteria admit the given product.
+
+    Args:
+      campaign: The campaign whose targeting settings to test.
+      product_status: The wide product record to test.
+      category_names_by_id: Google product category ID to US English name.
+      language_codes_by_resource_name: Ads language resource name to language
+        code.
+
+    Returns:
+      Whether the campaign could target this product at all.
+    """
+
+    product = product_status.product
+    if campaign['merchant_id'] != product_status.account_id:
       return False
+    campaign_label = campaign['feed_label'].lower()
+    if campaign_label and campaign_label != product.feed_label.lower():
+      return False
+    if not campaign['enable_local'] and product_status.channel == 'local':
+      return False
+    for dimension in campaign['inventory_filter_dimensions']:
+      if not dimension_matches_product(
+          product_status, dimension, category_names_by_id):
+        return False
 
-  # Language targeting
-  positive_languages = [
-      language_codes_by_resource_name[lang['language']]
-      for lang in campaign['languages']
-      if lang['is_targeted']
-  ]
-  negative_languages = [
-      language_codes_by_resource_name[lang['language']]
-      for lang in campaign['languages']
-      if not lang['is_targeted']
-  ]
+    # Language targeting
+    positive_languages = [
+        language_codes_by_resource_name[lang['language']]
+        for lang in campaign['languages']
+        if lang['is_targeted']
+    ]
+    negative_languages = [
+        language_codes_by_resource_name[lang['language']]
+        for lang in campaign['languages']
+        if not lang['is_targeted']
+    ]
 
-  if (
-      positive_languages
-      and product['contentLanguage'] not in positive_languages
-  ):
-    return False
-  if product['contentLanguage'] in negative_languages:
-    return False
-  return True
+    content_language = product.content_language
+    if (
+        positive_languages
+        and content_language not in positive_languages
+    ):
+      return False
+    if content_language in negative_languages:
+      return False
+    return True
 
 
 def get_campaign_targeting(
-    product: Any,
+    product: schema_pb2.WideProduct,
     trees_by_campaign_id: dict[str, list[ProductTargetingTree]],
     campaigns_by_merchant_id: dict[str, list[Campaign]],
     category_names_by_id: dict[str, str],
     language_codes_by_resource_name: dict[str, str],
-) -> Iterable[Tuple[Any, list[ProductTargetingTree]]]:
+) -> Iterable[Tuple[schema_pb2.WideProduct, list[ProductTargetingTree]]]:
   """Determines whether a product is targeted by any visible campaigns.
 
   Conforms to Beam ParDo function return requirements.
 
   Args:
-    product: The product to compare against
-    mechant_to_cids: A lookup table of Merchant Center leaf IDs to Ads Customer IDs
-    cid_to_ad_group_trees: A multimap of cids to the unique listing group tree for each
-      campaign. Works for PMax asset groups as well as Shopping ad groups.
+    product: The wide product record to compare against.
+    trees_by_campaign_id: A multimap of campaign ID to the unique listing group
+      tree for each campaign. Works for PMax asset groups as well as Shopping
+      ad groups.
+    campaigns_by_merchant_id: A multimap of Merchant Center account ID to the
+      campaigns fed by it.
+    category_names_by_id: Google product category ID to US English name.
+    language_codes_by_resource_name: Ads language resource name to language
+      code.
 
   Returns:
     An iterable Tuple of the product and all trees that match it.
   """
 
   matched_trees = []
-  for campaign in campaigns_by_merchant_id.get(product['accountId'], []):
+  account_id = product.account_id
+  for campaign in campaigns_by_merchant_id.get(account_id, []):
     if not campaign_matches_product_status(
         campaign, product, category_names_by_id, language_codes_by_resource_name
     ):
       continue
     for tree in trees_by_campaign_id.get(campaign['campaign_id'], []):
       if product_targeted_by_tree(
-          product['product'], tree['node'], category_names_by_id
+          product, tree['node'], category_names_by_id
       ):
         matched_trees.append(tree)
 

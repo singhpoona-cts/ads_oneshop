@@ -31,5 +31,5 @@ INNER JOIN
   `${PROJECT_NAME}.${DATASET_NAME}.acit` AS A
   ON P.account_id = A.merchant_id AND P.offer_id = A.offer_id
 WHERE
-  item_level_issue.servability = 'disapproved'
-  AND destination = 'Shopping';
+  item_level_issue.severity = 'DISAPPROVED'
+  AND item_level_issue.reporting_context = 'SHOPPING_ADS';

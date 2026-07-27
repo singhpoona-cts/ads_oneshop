@@ -13,13 +13,13 @@
 # limitations under the License.
 
 from absl.testing import absltest
-
+from acit import create_base_tables
+from acit import product
+from acit.api.v0.storage import schema_pb2
 import apache_beam as beam
+from apache_beam.internal import pickler
 from apache_beam.testing import test_pipeline
 from apache_beam.testing import util
-
-from acit import product
-from acit import create_base_tables
 
 
 class CreateBaseTablesTest(absltest.TestCase):
@@ -79,6 +79,37 @@ class CreateBaseTablesTest(absltest.TestCase):
       )
 
       util.assert_that(combined, util.equal_to(expected))
+
+  def test_pipeline_with_wide_product(self):
+    # Verify that the generated Proto class and its ProtoCoder are picklable
+    # by reference without triggering upb Descriptor pickling errors.
+    self.assertEqual(
+        schema_pb2.WideProduct.__module__, 'acit.api.v0.storage.schema_pb2'
+    )
+    self.assertIsNotNone(pickler.dumps(schema_pb2.WideProduct))
+
+    proto_coder = beam.coders.ProtoCoder(schema_pb2.WideProduct)
+    self.assertIsNotNone(pickler.dumps(proto_coder))
+
+    wide_prod = schema_pb2.WideProduct()
+    wide_prod.account_id = '12345'
+    wide_prod.offer_id = 'offer_1'
+    self.assertIsNotNone(pickler.dumps(wide_prod))
+
+    # Test running in Beam TestPipeline with ProtoCoder and proto transforms
+    with test_pipeline.TestPipeline() as p:
+      prods = p | 'Create Prods' >> beam.Create([wide_prod])
+      approved = prods | 'Approved' >> beam.Map(product.set_product_approved)
+      in_stock = (
+          approved | 'In Stock' >> beam.Map(product.set_product_in_stock)
+      )
+
+      def _check(elements):
+        self.assertLen(elements, 1)
+        self.assertEqual(elements[0].account_id, '12345')
+        self.assertEqual(elements[0].offer_id, 'offer_1')
+
+      util.assert_that(in_stock, _check)
 
 
 if __name__ == '__main__':

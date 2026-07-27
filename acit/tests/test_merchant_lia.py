@@ -11,30 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Tests for the Merchant API v1 omnichannel/LIA ingestion helpers."""
 
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+from absl.testing import absltest
+from acit import merchant_lia
 
-filegroup(
-    name = "sql",
-    srcs = glob(["*.sql"]),
-)
 
-# TODO(cbartz): model code
+class MerchantLiaTest(absltest.TestCase):
+  """Unit tests for the Merchant API v1 omnichannel/LIA ingestion helpers."""
 
-sh_binary(
-    name = "run_mex",
-    srcs = [
-        "run_mex.sh",
-    ],
-    data = [
-        ":sql",
-        "//benchmark:benchmark_details.csv",
-        "//benchmark:benchmark_values.csv",
-    ],
-    use_bash_launcher = True,
-    visibility = ["//acit:__subpackages__"],
-    deps = [
-        "//acit:bq_lib",
-        "@bazel_tools//tools/bash/runfiles",
-    ],
-)
+  def test_metadata_key(self):
+    self.assertEqual(merchant_lia.METADATA_KEY, 'downloaderMetadata')
+
+
+if __name__ == '__main__':
+  absltest.main()

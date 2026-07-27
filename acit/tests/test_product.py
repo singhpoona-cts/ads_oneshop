@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from absl.testing import absltest
 from absl.testing import parameterized
-
 from acit import product as product_util
+from acit.api.v0.storage import schema_pb2
+from google.protobuf import json_format
 
 _PRODUCT_CATEGORIES_BY_ID = {
     '1': 'Animals & Pet Supplies',
@@ -22,44 +24,87 @@ _PRODUCT_CATEGORIES_BY_ID = {
 }
 
 
+def _to_camel_case(snake_str):
+  components = snake_str.split('_')
+  return components[0] + ''.join(x.title() for x in components[1:])
+
+
+def _convert_dict_to_camel_case(d):
+  """Recursively converts keys to camelCase and standardizes enum values."""
+  if isinstance(d, list):
+    return [_convert_dict_to_camel_case(x) for x in d]
+  if isinstance(d, dict):
+    new_dict = {}
+    for k, v in d.items():
+      camel_key = _to_camel_case(k)
+      if camel_key in ('condition',
+                       'availability',
+                       'reportingContext') and isinstance(v, str):
+        v = v.upper()
+      new_dict[camel_key] = _convert_dict_to_camel_case(v)
+    return new_dict
+  return d
+
+
 class ProductTest(parameterized.TestCase):
 
   @parameterized.named_parameters(
       {
           'testcase_name': 'product_category_wildcard',
-          'dimension': {'productCategory': {'level': 'LEVEL5'}},
+          'dimension': {
+              'productCategory': {
+                  'level': 'LEVEL5'
+              }
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_category_specific',
           'dimension': {
-              'productCategory': {'categoryId': '1', 'level': 'LEVEL5'}
+              'productCategory': {
+                  'categoryId': '1',
+                  'level': 'LEVEL5'
+              }
           },
           'expected': False,
       },
       {
           'testcase_name': 'product_brand_wildcard',
-          'dimension': {'productBrand': {}},
+          'dimension': {
+              'productBrand': {}
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_brand_specific',
-          'dimension': {'productBrand': {'value': 'Brand Name'}},
+          'dimension': {
+              'productBrand': {
+                  'value': 'Brand Name'
+              }
+          },
           'expected': False,
       },
       {
           'testcase_name': 'product_channel_wildcard',
-          'dimension': {'productChannel': {}},
+          'dimension': {
+              'productChannel': {}
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_channel_specific',
-          'dimension': {'productChannel': {'channel': 'ONLINE'}},
+          'dimension': {
+              'productChannel': {
+                  'channel': 'ONLINE'
+              }
+          },
           'expected': False,
       },
       {
           'testcase_name': 'product_channel_exclusivity_wildcard',
-          'dimension': {'productChannelExclusivity': {}},
+          'dimension': {
+              'productChannelExclusivity': {}
+          },
           'expected': True,
       },
       {
@@ -73,17 +118,27 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_condition_wildcard',
-          'dimension': {'productCondition': {}},
+          'dimension': {
+              'productCondition': {}
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_condition_specific',
-          'dimension': {'productCondition': {'condition': 'NEW'}},
+          'dimension': {
+              'productCondition': {
+                  'condition': 'NEW'
+              }
+          },
           'expected': False,
       },
       {
           'testcase_name': 'product_custom_attribute_wildcard',
-          'dimension': {'productCustomAttribute': {'index': 'INDEX0'}},
+          'dimension': {
+              'productCustomAttribute': {
+                  'index': 'INDEX0'
+              }
+          },
           'expected': True,
       },
       {
@@ -98,23 +153,36 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_item_id_wildcard',
-          'dimension': {'productItemId': {}},
+          'dimension': {
+              'productItemId': {}
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_item_id_specific',
-          'dimension': {'productItemId': {'value': 'my_product_id'}},
+          'dimension': {
+              'productItemId': {
+                  'value': 'my_product_id'
+              }
+          },
           'expected': False,
       },
       {
           'testcase_name': 'product_type_wildcard',
-          'dimension': {'productType': {'level': 'LEVEL1'}},
+          'dimension': {
+              'productType': {
+                  'level': 'LEVEL1'
+              }
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_type_specific',
           'dimension': {
-              'productType': {'level': 'LEVEL5', 'value': 'My product type'}
+              'productType': {
+                  'level': 'LEVEL5',
+                  'value': 'My product type'
+              }
           },
           'expected': False,
       },
@@ -126,51 +194,95 @@ class ProductTest(parameterized.TestCase):
   @parameterized.named_parameters(
       {
           'testcase_name': 'product_category_top_level_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {
+              'product_attributes': {
+                  'google_product_category': 'Animals & Pet Supplies'
+              }
+          },
           'dimension': {
-              'productCategory': {'categoryId': '1', 'level': 'LEVEL1'}
+              'productCategory': {
+                  'categoryId': '1',
+                  'level': 'LEVEL1'
+              }
           },
           'expected': True,
       },
       {
           'testcase_name': 'product_category_top_level_mismatch',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {
+              'product_attributes': {
+                  'google_product_category': 'Animals & Pet Supplies'
+              }
+          },
           'dimension': {
-              'productCategory': {'categoryId': '2', 'level': 'LEVEL1'}
+              'productCategory': {
+                  'categoryId': '2',
+                  'level': 'LEVEL1'
+              }
           },
           'expected': False,
       },
       {
           'testcase_name': 'product_category_top_level_wildcard_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
-          'dimension': {'productCategory': {}},
+          'product': {
+              'product_attributes': {
+                  'google_product_category': 'Animals & Pet Supplies'
+              }
+          },
+          'dimension': {
+              'productCategory': {}
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_brand_match',
-          'product': {'brand': 'Some Brand'},
-          'dimension': {'productBrand': {'value': 'Some Brand'}},
+          'product': {
+              'product_attributes': {
+                  'brand': 'Some Brand'
+              }
+          },
+          'dimension': {
+              'productBrand': {
+                  'value': 'Some Brand'
+              }
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_channel_match',
-          'product': {'channel': 'online'},
-          'dimension': {'productChannel': {'channel': 'online'}},
+          'product': {
+              'channel': 'online'
+          },
+          'dimension': {
+              'productChannel': {
+                  'channel': 'online'
+              }
+          },
           'expected': True,
       },
       {
           'testcase_name': 'product_condition_match',
-          'product': {'condition': 'new'},
-          'dimension': {'productCondition': {'condition': 'new'}},
+          'product': {
+              'product_attributes': {
+                  'condition': 'new'
+              }
+          },
+          'dimension': {
+              'productCondition': {
+                  'condition': 'new'
+              }
+          },
           'expected': True,
       },
       # TODO: custom attribute out of index
       {
           'testcase_name': 'product_custom_attribute_match',
           'product': {
-              'customLabel0': 'first attribute',
-              'customLabel1': 'some attribute',
-              'customLabel4': 'ignored',
+              'product_attributes': {
+                  'custom_label_0': 'first attribute',
+                  'custom_label_1': 'some attribute',
+                  'custom_label_4': 'ignored',
+              }
           },
           'dimension': {
               # 0-indexed
@@ -184,8 +296,14 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'product_item_match',
-          'product': {'offerId': 'asdf'},
-          'dimension': {'productItemId': {'value': 'asdf'}},
+          'product': {
+              'offer_id': 'asdf'
+          },
+          'dimension': {
+              'productItemId': {
+                  'value': 'asdf'
+              }
+          },
           'expected': True,
       },
       # TODO: Same test cases as above
@@ -193,26 +311,38 @@ class ProductTest(parameterized.TestCase):
           'testcase_name': 'product_type_match',
           # Ads only uses the first product type, no matter what
           'product': {
-              'productTypes': [
-                  'First type > some type > Other type',
-                  'ignored taxonomy',
-                  'some bad > > > data',
-              ]
+              'product_attributes': {
+                  'product_types': [
+                      'First type > some type > Other type',
+                      'ignored taxonomy',
+                      'some bad > > > data',
+                  ]
+              }
           },
           'dimension': {
               # 1-indexed
-              'productType': {'value': 'some type', 'level': 'LEVEL2'}
+              'productType': {
+                  'value': 'some type',
+                  'level': 'LEVEL2'
+              }
           },
           'expected': True,
       },
   )
-  def test_specific_dimension_matches_product(
-      self, product, dimension, expected
-  ):
+  def test_specific_dimension_matches_product(self, product, dimension,
+                                              expected):
+    """Tests whether a single targeting dimension match a given product."""
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     self.assertEqual(
-        product_util.dimension_matches_product(
-            product, dimension, _PRODUCT_CATEGORIES_BY_ID
-        ),
+        product_util.dimension_matches_product(msg, dimension,
+                                               _PRODUCT_CATEGORIES_BY_ID),
         expected,
     )
 
@@ -220,12 +350,18 @@ class ProductTest(parameterized.TestCase):
       {
           'testcase_name': 'catch_all',
           'product': {},
-          'tree': {'isTargeted': True},
+          'tree': {
+              'isTargeted': True
+          },
           'expected': True,
       },
       {
           'testcase_name': 'basic_path_match',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {
+              'product_attributes': {
+                  'google_product_category': 'Animals & Pet Supplies'
+              }
+          },
           'tree': {
               'children': [
                   {
@@ -238,7 +374,9 @@ class ProductTest(parameterized.TestCase):
                       'isTargeted': True,
                   },
                   {
-                      'dimension': {'productCategory': {}},
+                      'dimension': {
+                          'productCategory': {}
+                      },
                       'isTargeted': False,
                   },
               ],
@@ -248,7 +386,11 @@ class ProductTest(parameterized.TestCase):
       },
       {
           'testcase_name': 'basic_path_wildcard',
-          'product': {'googleProductCategory': 'Animals & Pet Supplies'},
+          'product': {
+              'product_attributes': {
+                  'google_product_category': 'Animals & Pet Supplies'
+              }
+          },
           'tree': {
               'children': [
                   {
@@ -261,7 +403,9 @@ class ProductTest(parameterized.TestCase):
                       'isTargeted': False,
                   },
                   {
-                      'dimension': {'productCategory': {}},
+                      'dimension': {
+                          'productCategory': {}
+                      },
                       'isTargeted': True,
                   },
               ],
@@ -271,17 +415,28 @@ class ProductTest(parameterized.TestCase):
       },
   )
   def test_product_targeted_by_tree(self, product, tree, expected):
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     self.assertEqual(
-        product_util.product_targeted_by_tree(
-            product, tree, _PRODUCT_CATEGORIES_BY_ID
-        ),
+        product_util.product_targeted_by_tree(msg, tree,
+                                              _PRODUCT_CATEGORIES_BY_ID),
         expected,
     )
 
   @parameterized.named_parameters(
       {
           'testcase_name': 'explicit_match',
-          'product': {'productTypes': ['my level1 type']},
+          'product': {
+              'product_attributes': {
+                  'product_types': ['my level1 type']
+              }
+          },
           'node': {
               'children': [
                   {
@@ -298,13 +453,18 @@ class ProductTest(parameterized.TestCase):
                   # product type is targeted
               ],
               'dimension': {},
-              'isTargeted': None,
+              'isTargeted':
+              None,
           },
           'expected': True,
       },
       {
           'testcase_name': 'no_match_no_wildcard',
-          'product': {'productTypes': ['no_match_type']},
+          'product': {
+              'product_attributes': {
+                  'product_types': ['no_match_type']
+              }
+          },
           'node': {
               'children': [
                   {
@@ -321,39 +481,49 @@ class ProductTest(parameterized.TestCase):
                   # type, but we don't actually know
               ],
               'dimension': {},
-              'isTargeted': None,
+              'isTargeted':
+              None,
           },
           # We must assume (cautiously) that this product is not targeted.
           'expected': False,
       },
       {
           'testcase_name': 'match_with_wildcard',
-          'product': {'productTypes': ['my level1 type']},
+          'product': {
+              'product_attributes': {
+                  'product_types': ['my level1 type']
+              }
+          },
           'node': {
-              'children': [
-                  {
-                      'children': [],
-                      'dimension': {
-                          'productType': {
-                              'level': 'LEVEL1',
-                              # wildcard, value is omitted
-                          }
-                      },
-                      'isTargeted': False,
-                  }
-                  # We would expect a missing branch here which explicitly
-                  # *excludes* this product type.
+              'children':
+              [{
+                  'children': [],
+                  'dimension': {
+                      'productType': {
+                          'level': 'LEVEL1',
+                          # wildcard, value is omitted
+                      }
+                  },
+                  'isTargeted': False,
+              }
+               # We would expect a missing branch here which explicitly
+               # *excludes* this product type.
               ],
               'dimension': {},
-              'isTargeted': None,
+              'isTargeted':
+              None,
           },
-          # In this scenario, we would want to return `True`, but we are forced
-          # to take the value of the wildcard.
+          # In this scenario, we would want to return `True`,
+          # but we are forced to take the value of the wildcard.
           'expected': False,
       },
       {
           'testcase_name': 'no_match_with_wildcard',
-          'product': {'productTypes': ['no_match_type']},
+          'product': {
+              'product_attributes': {
+                  'product_types': ['no_match_type']
+              }
+          },
           'node': {
               'children': [
                   {
@@ -370,19 +540,30 @@ class ProductTest(parameterized.TestCase):
                   # *excludes* this product type.
               ],
               'dimension': {},
-              'isTargeted': None,
+              'isTargeted':
+              None,
           },
-          # Since there is no explicit match and we're missing branches, we want
-          # to be cautious and report the product as untargeted (`False`), even
-          # though this may be wrong. But we are forced to take the wildcard
+          # Since there is no explicit match and we're missing branches,
+          # we want to be cautious and report the product as
+          # untargeted (`False`), even though this may be wrong.
+          # But we are forced to take the wildcard
           # targeting. This may result in overreported product targeting.
           'expected': True,
       },
   )
-  def test_product_targeted_by_unbalanced_tree(self, product, node, expected):
+  def test_product_targeted_by_unbalanced_tree(self, product, node,
+                                               expected):
+    """Tests whether a product matches targeting in an unbalanced tree."""
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     actual = product_util.product_targeted_by_tree(
-        product, node, _PRODUCT_CATEGORIES_BY_ID
-    )
+        msg, node, _PRODUCT_CATEGORIES_BY_ID)
     self.assertEqual(expected, actual)
 
   def test_build_product_group_tree_empty_root(self):
@@ -411,7 +592,11 @@ class ProductTest(parameterized.TestCase):
         'children': [{
             'children': [{
                 'children': [],
-                'dimension': {'productType': {'level': 'LEVEL2'}},
+                'dimension': {
+                    'productType': {
+                        'level': 'LEVEL2'
+                    }
+                },
                 'isTargeted': True,
             }],
             'dimension': {
@@ -420,10 +605,12 @@ class ProductTest(parameterized.TestCase):
                     'value': 'my level1 type',
                 }
             },
-            'isTargeted': None,
+            'isTargeted':
+            None,
         }],
         'dimension': {},
-        'isTargeted': None,
+        'isTargeted':
+        None,
     }
 
     product_util.build_product_group_tree(dimensions, root, is_targeted)
@@ -451,7 +638,11 @@ class ProductTest(parameterized.TestCase):
             'children': [
                 {
                     'children': [],
-                    'dimension': {'productType': {'level': 'LEVEL2'}},
+                    'dimension': {
+                        'productType': {
+                            'level': 'LEVEL2'
+                        }
+                    },
                     'isTargeted': True,
                 },
             ],
@@ -461,10 +652,12 @@ class ProductTest(parameterized.TestCase):
                     'value': 'my level1 type',
                 }
             },
-            'isTargeted': None,
+            'isTargeted':
+            None,
         }],
         'dimension': {},
-        'isTargeted': None,
+        'isTargeted':
+        None,
     }
 
     is_targeted = False
@@ -474,7 +667,11 @@ class ProductTest(parameterized.TestCase):
             'children': [
                 {
                     'children': [],
-                    'dimension': {'productType': {'level': 'LEVEL2'}},
+                    'dimension': {
+                        'productType': {
+                            'level': 'LEVEL2'
+                        }
+                    },
                     'isTargeted': True,
                 },
                 {
@@ -494,12 +691,48 @@ class ProductTest(parameterized.TestCase):
                     'value': 'my level1 type',
                 }
             },
-            'isTargeted': None,
+            'isTargeted':
+            None,
         }],
         'dimension': {},
-        'isTargeted': None,
+        'isTargeted':
+        None,
     }
 
     product_util.build_product_group_tree(dimensions, root, is_targeted)
 
     self.assertEqual(expected, root)
+
+  def test_protobuf_enum_matching_and_type_preservation(self):
+    """Verifies that our enum-aware _val helper correctly handles native Protobuf enums."""
+    # Construct a real schema_pb2.WideProduct containing nested Protobufs
+    wide = schema_pb2.WideProduct()
+    wide.channel = 'online'
+    # 'IN_STOCK' Enum value (internally int 1)
+    wide.product.product_attributes.availability = 1
+    # 'NEW' Enum value (internally int 1)
+    wide.product.product_attributes.condition = 1
+    wide.product.product_attributes.brand = 'TestBrand'
+    # Verify set_product_in_stock matches "IN_STOCK"
+    # string against integer enum 1 correctly
+    wide = product_util.set_product_in_stock(wide)
+    self.assertTrue(wide.in_stock)
+
+    # Verify set_product_approved matches "SHOPPING_ADS" enum 1 correctly
+    status_msg = wide.status.destination_statuses.add()
+    status_msg.reporting_context = 1  # 'SHOPPING_ADS' Enum value 1
+    status_msg.approved_countries.append('US')
+    wide = product_util.set_product_approved(wide)
+    self.assertEqual(list(wide.approved_countries), ['US'])
+
+    dimension = {
+        'productCondition': {
+            'condition': 'NEW'
+        }
+    }
+    self.assertTrue(
+        product_util.dimension_matches_product(wide, dimension, {})
+    )
+
+if __name__ == '__main__':
+  absltest.main()

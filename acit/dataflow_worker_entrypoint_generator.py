@@ -20,11 +20,20 @@ This allows hermetic Bazel-built python to be used in the Dataflow runtime.
 import os
 import sys
 
+# Collect all valid search paths from sys.path so subprocesses can find modules
+module_paths = [p for p in sys.path if p]
+
 _WORKER_ENTRYPOINT = """
 export RUN_PYTHON_SDK_IN_DEFAULT_ENVIRONMENT=1
-export PYTHONPATH={module_paths}
-export PYTHON_PATH={python}
-export PATH=$(dirname {python}):$PATH
-""".format(module_paths=os.environ.get('PYTHONPATH', ''), python=sys.executable)
+export PYTHONPATH="{pythonpath}"
+export PYTHON_PATH="{python}"
+mkdir -p /tmp/bin
+ln -sf "{python}" /tmp/bin/python
+ln -sf "{python}" /tmp/bin/python3
+export PATH="/tmp/bin:$(dirname "{python}"):$PATH"
+""".format(
+    pythonpath=os.pathsep.join(module_paths),
+    python=sys.executable,
+)
 
 print(_WORKER_ENTRYPOINT)
