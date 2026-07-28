@@ -103,7 +103,8 @@ def set_product_approved(product):
     result = {**product}
     result['approvedCountries'] = destination.get('approved_countries', [])
     result['pendingCountries'] = destination.get('pending_countries', [])
-    result['disapprovedCountries'] = destination.get('disapproved_countries', [])
+    result['disapprovedCountries'] = destination.get('disapproved_countries',
+                                                     [])
     return result
   return product
 

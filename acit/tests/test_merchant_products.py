@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the Merchant API v1 products ingestion helpers."""
+
 
 import json
 from unittest import mock
@@ -24,7 +24,7 @@ from google.shopping import type as shopping_type
 
 
 class MerchantProductsTest(absltest.TestCase):
-
+  """Unit tests for the Merchant API v1 products ingestion helpers."""
   def test_to_dict_renders_enums_as_strings(self):
     """Native v1 shape must use enum *names*, not integers, for BigQuery STRING."""
     product = mp.Product(
@@ -36,13 +36,13 @@ class MerchantProductsTest(absltest.TestCase):
             condition=mp.Condition.NEW,
         ),
     )
-    d = merchant_products._to_dict(product)
+    d = merchant_products._to_dict(product) # pylint: disable=protected-access
     self.assertEqual(d['product_attributes']['availability'], 'IN_STOCK')
     self.assertEqual(d['product_attributes']['condition'], 'NEW')
 
   def test_to_dict_uses_snake_case_keys(self):
     product = mp.Product(offer_id='SKU1', content_language='en')
-    d = merchant_products._to_dict(product)
+    d = merchant_products._to_dict(product) # pylint: disable=protected-access
     self.assertEqual(d['offer_id'], 'SKU1')
     self.assertEqual(d['content_language'], 'en')
 
@@ -50,10 +50,11 @@ class MerchantProductsTest(absltest.TestCase):
     """v1 Price is {amount_micros, currency_code}, not {value, currency}."""
     product = mp.Product(
         product_attributes=mp.ProductAttributes(
-            price=shopping_type.Price(amount_micros=6_000_000, currency_code='USD')
+            price=shopping_type.Price(amount_micros=6_000_000, 
+                                      currency_code='USD')
         )
     )
-    d = merchant_products._to_dict(product)
+    d = merchant_products._to_dict(product) # pylint: disable=protected-access
     price = d['product_attributes']['price']
     # int64 fields render as strings in proto JSON.
     self.assertEqual(int(price['amount_micros']), 6_000_000)
@@ -65,13 +66,14 @@ class MerchantProductsTest(absltest.TestCase):
         product_status=mp.ProductStatus(
             destination_statuses=[
                 mp.ProductStatus.DestinationStatus(
-                    reporting_context=shopping_type.ReportingContext.ReportingContextEnum.SHOPPING_ADS,
+                    reporting_context=(shopping_type.ReportingContext.
+                                       ReportingContextEnum.SHOPPING_ADS),
                     disapproved_countries=['US'],
                 )
             ]
         )
     )
-    d = merchant_products._to_dict(product)
+    d = merchant_products._to_dict(product) # pylint: disable=protected-access
     ds = d['product_status']['destination_statuses'][0]
     self.assertEqual(ds['reporting_context'], 'SHOPPING_ADS')
     self.assertEqual(ds['disapproved_countries'], ['US'])
@@ -106,7 +108,8 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
 
   def test_returns_a_lazy_generator(self):
     client = _FakeProductsClient(self._products(3))
-    result = merchant_products._list_leaf_products(client, '123')
+    result = (merchant_products. # pylint: disable=protected-access
+              _list_leaf_products(client, '123'))
     # Nothing is fetched or converted until the caller starts iterating.
     self.assertEqual(client.consumed, 0)
     first = next(iter(result))
@@ -115,15 +118,19 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
 
   def test_yields_every_product_with_metadata(self):
     client = _FakeProductsClient(self._products(5))
-    rows = list(merchant_products._list_leaf_products(client, '123'))
+    rows = list(merchant_products. # pylint: disable=protected-access
+                _list_leaf_products(client,'123'))
     self.assertLen(rows, 5)
-    self.assertEqual([r['offer_id'] for r in rows], [f'SKU{i}' for i in range(5)])
+    self.assertEqual([r['offer_id'] for r in rows],
+                      [f'SKU{i}' for i in range(5)])
     for row in rows:
-      self.assertEqual(row[merchant_products.METADATA_KEY], {'accountId': '123'})
+      self.assertEqual(row[merchant_products.METADATA_KEY],
+                       {'accountId': '123'})
 
   def test_empty_account_yields_nothing(self):
     client = _FakeProductsClient([])
-    self.assertEmpty(list(merchant_products._list_leaf_products(client, '123')))
+    self.assertEmpty(list(merchant_products. # pylint: disable=protected-access
+                          _list_leaf_products(client, '123')))
 
   def test_download_products_streams_to_disk(self):
     """`_process` must write while iterating, not after collecting."""
@@ -137,7 +144,8 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
 
     written = (mc_path / '123' / 'products' / 'rows.jsonlines').read_text()
     rows = [json.loads(line) for line in written.splitlines()]
-    self.assertEqual([r['offer_id'] for r in rows], [f'SKU{i}' for i in range(4)])
+    self.assertEqual([r['offer_id'] for r in rows],
+                     [f'SKU{i}' for i in range(4)])
 
 
 if __name__ == '__main__':

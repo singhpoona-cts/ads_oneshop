@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the Merchant API v1 shipping-settings ingestion helpers."""
 
 from absl.testing import absltest
 from acit import merchant_shipping
@@ -23,7 +22,7 @@ def _service(**kwargs):
 
 
 class MerchantShippingTest(absltest.TestCase):
-
+  """Unit tests for the Merchant API v1 shipping-settings ingestion helpers."""
   def test_to_dict_renders_enums_as_strings(self):
     """Native v1 shape must use enum *names*, not integers, for BigQuery STRING."""
     settings = ma.ShippingSettings(
@@ -38,7 +37,7 @@ class MerchantShippingTest(absltest.TestCase):
             ),
         )],
     )
-    d = merchant_shipping._to_dict(settings)
+    d = merchant_shipping._to_dict(settings) # pylint: disable=protected-access
     svc = d['services'][0]
     self.assertEqual(svc['shipment_type'], 'DELIVERY')
     self.assertEqual(
@@ -55,7 +54,8 @@ class MerchantShippingTest(absltest.TestCase):
                                           max_transit_days=4),
         )],
     )
-    svc = merchant_shipping._to_dict(settings)['services'][0]
+    svc = (merchant_shipping. # pylint: disable=protected-access
+           _to_dict(settings)['services'][0])
     self.assertEqual(svc['service_name'], 'Main')
     self.assertEqual(svc['delivery_countries'], ['US', 'IL'])
     self.assertEqual(svc['currency_code'], 'USD')
@@ -72,9 +72,11 @@ class MerchantShippingTest(absltest.TestCase):
             )],
         )],
     )
-    rg = merchant_shipping._to_dict(settings)['services'][0]['rate_groups'][0]
+    rg = (merchant_shipping. # pylint: disable=protected-access
+          _to_dict(settings)['services'][0]['rate_groups'][0])
     flat = rg['single_value']['flat_rate']
-    # proto-plus renders int64 as a string; the zero must be present, not dropped.
+    # proto-plus renders int64 as a string; 
+    # the zero must be present, not dropped.
     self.assertIn('amount_micros', flat)
     self.assertEqual(int(flat['amount_micros']), 0)
     self.assertEqual(flat['currency_code'], 'USD')
@@ -90,7 +92,8 @@ class MerchantShippingTest(absltest.TestCase):
             )],
         )],
     )
-    flat = (merchant_shipping._to_dict(settings)['services'][0]
+    flat = (merchant_shipping. # pylint: disable=protected-access
+            _to_dict(settings)['services'][0]
             ['rate_groups'][0]['single_value']['flat_rate'])
     self.assertEqual(int(flat['amount_micros']), 5_000_000)
 
@@ -107,7 +110,8 @@ class MerchantShippingTest(absltest.TestCase):
             )],
         )],
     )
-    cell = (merchant_shipping._to_dict(settings)['services'][0]
+    cell = (merchant_shipping. # pylint: disable=protected-access
+            _to_dict(settings)['services'][0]
             ['rate_groups'][0]['main_table']['rows'][0]['cells'][0])
     self.assertEqual(int(cell['flat_rate']['amount_micros']), 0)
 

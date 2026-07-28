@@ -16,28 +16,30 @@
 Phase 1 of the Content API -> Merchant API migration. This replaces the old
 Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow.
 
-The old monolithic `Account` object is split across many v1 sub-resources, so an
-account is assembled by fanning out:
+The old monolithic `Account` object is split across many v1 sub-resources, 
+so an account is assembled by fanning out:
 
-    accounts/{id}                         core Account
-    accounts/{id}/homepage                Homepage          (was: websiteUrl)
-    accounts/{id}/businessInfo            BusinessInfo      (was: businessInformation)
-    accounts/{id}/businessIdentity        BusinessIdentity
-    accounts/{id}/automaticImprovements   AutomaticImprovements
-    accounts/{id}/users (list)            User
-    accounts/{id}/relationships (list)    AccountRelationship
-    accounts/{id}/services (list)         AccountService    (was: adsLinks / accountManagement)
+accounts/{id}                      core Account
+accounts/{id}/homepage             Homepage          (was: websiteUrl)
+accounts/{id}/businessInfo         BusinessInfo      (was: businessInformation)
+accounts/{id}/businessIdentity     BusinessIdentity
+accounts/{id}/automaticImprovements   AutomaticImprovements
+accounts/{id}/users (list)         User
+accounts/{id}/relationships (list) AccountRelationship
+accounts/{id}/services (list)  AccountService    
+(was: adsLinks / accountManagement)
 
-Output is written in the NATIVE v1 shape (no legacy Content API field names): one
-flat JSON record per account, to ``<mc_path>/<account_id>/accounts/rows.jsonlines``.
-That per-account file layout keeps the existing BigQuery glob
+Output is written in the NATIVE v1 shape (no legacy Content API field names):
+one flat JSON record per account, to 
+``<mc_path>/<account_id>/accounts/rows.jsonlines``.That per-account file 
+layout keeps the existing BigQuery glob
 (``merchant_center/*/accounts/rows.jsonlines``) working unchanged.
 """
 
 from concurrent import futures
 import json
 import time
-from typing import Any
+from typing import Any, Dict
 
 from absl import logging
 from etils import epath
@@ -52,8 +54,9 @@ _TRANSIENT = (
     gax_exceptions.TooManyRequests,
 )
 
-# AccountService.service_type oneof members (each is an empty message in the API);
-# we flatten the set oneof to a STRING `service_type` for BigQuery.
+# AccountService.service_type oneof members (each is an 
+# empty message in the API); we flatten the set oneof to a STRING
+# `service_type` for BigQuery.
 _SERVICE_TYPE_FIELDS = (
     'products_management',
     'campaigns_management',
@@ -84,7 +87,8 @@ def _retry(fn, *, what, attempts=6):
 
 
 def _to_dict(msg) -> Any:
-  """Proto -> dict in native v1 shape: snake_case keys, enum *names* (not ints)."""
+  """Proto -> dict in native v1 shape: snake_case keys,
+  enum *names* (not ints)."""
   if msg is None:
     return None
   return type(msg).to_dict(msg, use_integers_for_enums=False)
@@ -111,7 +115,8 @@ class _Clients:
 
 
 def _get_or_none(fn, *, what):
-  """Single-object getter tolerant of NOT_FOUND / PERMISSION_DENIED / FAILED_PRECONDITION."""
+  """Single-object getter tolerant of NOT_FOUND / PERMISSION_DENIED 
+  / FAILED_PRECONDITION."""
   try:
     return _to_dict(_retry(fn, what=what))
   except gax_exceptions.NotFound:
@@ -132,8 +137,9 @@ def _service_type(service_msg) -> str:
 
 
 def _build_record(
-    clients: _Clients, account_id: str, core: dict, parent: str, is_advanced: bool
-) -> dict:
+    clients: _Clients, account_id: str, 
+    core: Dict[str,Any], parent: str, is_advanced: bool
+) -> Dict[str,Any]:
   """Fans out across v1 sub-resources to build one flat native-shape record."""
   name = clients.accounts.account_path(account_id)  # "accounts/{id}"
 
@@ -173,7 +179,7 @@ def _build_record(
           what=f'business_info:{account_id}'),
       'business_identity': _get_or_none(
           lambda: clients.business_identity.get_business_identity(
-              name=clients.business_identity.business_identity_path(account_id)),
+          name=clients.business_identity.business_identity_path(account_id)),
           what=f'business_identity:{account_id}'),
       'automatic_improvements': _get_or_none(
           lambda: clients.automatic_improvements.get_automatic_improvements(
@@ -238,7 +244,10 @@ def discover_topology(clients: _Clients, input_ids):
   return aggregator_ids, standalone_ids, leaf_to_parent, cores
 
 
-def download_accounts(credentials, input_ids, mc_path, max_workers=_MAX_WORKERS):
+def download_accounts(credentials, 
+                      input_ids, 
+                      mc_path,
+                      max_workers=_MAX_WORKERS):
   """Downloads accounts from Merchant API v1 and writes flat per-account files.
 
   Args:

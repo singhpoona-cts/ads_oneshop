@@ -75,17 +75,20 @@ def combine_campaign_settings(
     languages_by_campaign_id: pvalue.PCollection,
     listing_scopes_by_campaign_id: pvalue.PCollection,
 ) -> pvalue.PCollection:
-  """Creates a single record for each campaign with its targeted languages and listing scopes.
+  """Creates a single record for each campaign with its targeted languages 
+  and listing scopes.
 
   Args:
     campaign_settings: The PCollection of all campaign settings.
-    languages_by_campaign_id: The PTable of campaign ID and language targeting information.
-    listing_scopes_by_campaign_id: The PTable of campaign ID and (at most one) root listing scope.
+    languages_by_campaign_id: The PTable of campaign ID and language targeting
+    information.listing_scopes_by_campaign_id: The PTable of campaign ID and 
+    (at most one) root listing scope.
 
   Returns:
     A combined campaign settings PCollection.
   """
-  # TODO: https://github.com/apache/beam/issues/20825 - Remove pyright ignore annotation.
+  # TODO: https://github.com/apache/beam/issues/20825 - 
+  # Remove pyright ignore annotation.
   return (  # pyright: ignore [reportReturnType]
       {
           'campaigns': campaign_settings | beam.Map(
@@ -200,9 +203,11 @@ def main(argv):
     def convert_lia_settings(row):
       # Phase 3: native Merchant API v1 omnichannel settings. `merchant_lia`
       # writes one FLAT record per account --
-      #   {"account_id": <int>, "omnichannel_settings": [<OmnichannelSetting>, ...]}
-      # -- so there is no longer a {settings, children[]} envelope to disambiguate.
-      # `ignore_unknown_fields` drops the stamped `downloaderMetadata` (and any
+      #   {"account_id": <int>, "omnichannel_settings":
+      # [<OmnichannelSetting>, ...]}
+      # -- so there is no longer a {settings, children[]}
+      # envelope to disambiguate.`ignore_unknown_fields` drops the stamped
+      # `downloaderMetadata` (and any
       # not-yet-modeled v1 attribute) instead of failing the parse.
       msg = schema_pb2.OmnichannelLiaSettings()
       json_format.ParseDict(row, msg, ignore_unknown_fields=True)
@@ -317,6 +322,14 @@ def main(argv):
       products<->statuses join we split `product_status` out into `status` and
       derive the `channel` dimension (the Ads `performance` FK still keys on
       channel; v1 exposes only the `legacy_local` boolean).
+
+      Args:
+        product_row: a native v1 `Product` dict, as read from
+          `merchant_center/*/products/*.jsonlines`.
+
+      Returns:
+        A dict with `accountId`, `offerId`, `product`, and `status` keys, ready
+        to be joined with Ads targeting data.
       """
       account_id = p[resource_downloader.METADATA_KEY]['accountId']
       status = p.pop('product_status', None) or {}
@@ -379,8 +392,8 @@ def main(argv):
 
     def products_table_row(row):
       """Prepare data for JSON serialization."""
-      # The v1 product carries the downloader metadata; status is derived from it
-      # and has none of its own.
+      # The v1 product carries the downloader metadata; status is derived
+      # from it and has none of its own.
       row['product'].pop('downloaderMetadata', None)
       msg = schema_pb2.WideProduct()
       json_format.ParseDict(row, msg, ignore_unknown_fields=True)

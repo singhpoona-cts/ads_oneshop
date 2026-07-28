@@ -24,11 +24,12 @@ MCA roll-down `list`, and the aggregator itself is NOT a valid parent for this
 method (it returns ``PermissionDenied`` -- "only subaccounts and standalone
 accounts"). So we pull per (sub)account directly and never query the aggregator.
 
-Output is written in the NATIVE v1 shape (snake_case keys, enum NAMES as strings)
-as one FLAT record per account --
-``{"account_id": <int>, "omnichannel_settings": [<OmnichannelSetting>, ...]}`` --
-to ``<mc_path>/<account_id>/liasettings/rows.jsonlines``, preserving the existing
-BigQuery glob (``merchant_center/*/liasettings/*.jsonlines``). The old
+Output is written in the NATIVE v1 shape 
+(snake_case keys, enum NAMES as strings) as one FLAT record per account --
+``{"account_id": <int>, "omnichannel_settings": [<OmnichannelSetting>, ...]}`` 
+-- to ``<mc_path>/<account_id>/liasettings/rows.jsonlines``,
+preserving the existing BigQuery glob 
+(``merchant_center/*/liasettings/*.jsonlines``). The old
 ``{settings, children[]}`` envelope is gone; downstream SQL recovers the
 MCA<->child relationship from the (already migrated) `accounts` table.
 """
@@ -42,8 +43,9 @@ from etils import epath
 from google.api_core import exceptions as gax_exceptions
 from google.shopping import merchant_accounts_v1 as ma
 
-# Key stamped onto every row so downstream code knows the source account. Mirrors
-# resource_downloader.METADATA_KEY. (account_id is also written at top level.)
+# Key stamped onto every row so downstream code knows the source account.
+# Mirrors resource_downloader.METADATA_KEY.
+# (account_id is also written at top level.)
 METADATA_KEY = 'downloaderMetadata'
 
 # The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
@@ -76,16 +78,21 @@ def _retry(fn, *, what, attempts=6):
 
 
 def _to_dict(msg):
-  """Proto -> dict in native v1 shape: snake_case keys, enum *names* (not ints)."""
+  """Proto -> dict in native v1 shape: snake_case keys,enum *names* (not ints)."""
   return type(msg).to_dict(msg, use_integers_for_enums=False)
 
 
 def _list_account_omnichannel(client, account_id):
   """Lists v1 omnichannel settings for one account, as native-shape dicts.
 
-  Returns None if the account is not a valid parent for this method (e.g. an
-  aggregator / MCA -> PermissionDenied), or a (possibly empty) list of
-  per-region OmnichannelSetting dicts otherwise.
+  Args:
+    client: The API client instance used to make the request.
+    account_id: The string or integer ID of the account to query.
+
+  Returns:
+    A (possibly empty) list of per-region OmnichannelSetting dicts, or None if
+    the account is not a valid parent for this method (e.g., an aggregator
+    or MCA resulting in PermissionDenied).
   """
   parent = f'accounts/{account_id}'
   try:
@@ -122,12 +129,14 @@ def _list_account_omnichannel(client, account_id):
 
 def download_omnichannel_settings(
     credentials, account_ids, mc_path, max_workers=_MAX_WORKERS):
-  """Downloads omnichannel/LIA settings from Merchant API v1, one file per account.
+  """Downloads omnichannel/LIA settings from Merchant API v1,
+  one file per account.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
-    account_ids: iterable of sub-/standalone Merchant Center account IDs to pull.
-      (Aggregators are skipped automatically -- they are not valid parents.)
+    account_ids: iterable of sub-/standalone Merchant Center account
+    IDs to pull. (Aggregators are skipped automatically 
+    -- they are not valid parents.)
     mc_path: epath.Path to the merchant_center output directory.
     max_workers: max concurrent account downloads. Callers (namely `acit.py`)
       should pass this explicitly so it stays consistent with the other

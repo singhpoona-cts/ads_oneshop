@@ -21,11 +21,12 @@ attributes (`product_attributes`) AND the status (`product_status`), so the old
 two-collection model (and the Beam products<->statuses join) collapses into one
 `accounts/{account}/products` list call.
 
-Output is written in the NATIVE v1 shape (snake_case keys, enum NAMES as strings)
--- one `Product` per line -- to ``<mc_path>/<account_id>/products/rows.jsonlines``,
-preserving the existing BigQuery glob (``merchant_center/*/products/*.jsonlines``).
-The Beam stage (`create_base_tables.py`) splits `product_status` out, derives the
-`channel` dimension, and joins Ads targeting.
+Output is written in the NATIVE v1 shape
+(snake_case keys, enum NAMES as strings)-- one `Product` per line -- to 
+``<mc_path>/<account_id>/products/rows.jsonlines``, preserving the existing 
+BigQuery glob (``merchant_center/*/products/*.jsonlines``).
+The Beam stage (`create_base_tables.py`) splits `product_status` 
+out, derives the `channel` dimension, and joins Ads targeting.
 """
 
 from concurrent import futures
@@ -87,6 +88,13 @@ def _list_leaf_products(client, account_id):
 
   Callers must therefore consume the result exactly once, while streaming it to
   its destination (see `download_products._process`).
+
+  Args:
+    client: The API client instance used to fetch the product catalog.
+    account_id: The ID of the leaf merchant account.
+
+  Yields:
+    Native-shape dicts representing individual v1 products.
   """
   parent = f'accounts/{account_id}'
   pager = _retry(
@@ -98,7 +106,8 @@ def _list_leaf_products(client, account_id):
   it = iter(pager)
   while True:
     try:
-      product = _retry(lambda: next(it, None), what=f'list_products_page:{account_id}')
+      product = _retry(lambda: next(it, None), 
+                       what=f'list_products_page:{account_id}')
     except StopIteration:
       break
     if product is None:
@@ -108,13 +117,14 @@ def _list_leaf_products(client, account_id):
     yield d
 
 
-def download_products(credentials, account_ids, mc_path, max_workers=_MAX_WORKERS):
+def download_products(credentials, account_ids,
+                      mc_path, max_workers=_MAX_WORKERS):
   """Downloads products from Merchant API v1 and writes per-account files.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
-    account_ids: iterable of leaf/standalone Merchant Center account IDs to pull.
-    mc_path: epath.Path to the merchant_center output directory.
+    account_ids: iterable of leaf/standalone Merchant Center account IDs
+    to pull.mc_path: epath.Path to the merchant_center output directory.
     max_workers: max concurrent account downloads. Callers (namely `acit.py`)
       should pass this explicitly so it stays consistent with the other
       Merchant API ingestion stages.

@@ -36,8 +36,8 @@ class TestAcit(parameterized.TestCase):
     # Merchant Center data is pulled via the Merchant API (stable v1) gRPC
     # clients. Stub those out so the tests exercise only the credential / Ads
     # logic without making real network calls. `download_accounts` returns the
-    # (aggregators, standalones, leaf->parent) topology; the rest are side-effect
-    # only.
+    # (aggregators, standalones, leaf->parent) topology; 
+    # the rest are side-effect only.
     self.enter_context(
         mock.patch.object(
             acit.merchant_accounts,

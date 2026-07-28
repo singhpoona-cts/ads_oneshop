@@ -18,19 +18,20 @@ API `shippingsettings.get` (per account) + `shippingsettings.list` (MCA
 roll-down) pulls. This was the LAST Content API resource; once it is gone the
 Content API (`discovery.build('content', 'v2.1')`) is no longer used.
 
-In the Merchant API, account-level shipping config lives in **ShippingSettings**,
-a singleton per account fetched via
+In the Merchant API, account-level shipping config lives in 
+**ShippingSettings**, a singleton per account fetched via
 ``ShippingSettingsServiceClient.get_shipping_settings(
 name="accounts/{id}/shippingSettings")``. There is no MCA roll-down `list`, and
 the aggregator itself is NOT a valid target (it returns ``PermissionDenied`` --
 "only subaccounts and standalone accounts"). So we fetch per (sub)account
 directly and never query the aggregator.
 
-Output is written in the NATIVE v1 shape (snake_case keys, enum NAMES as strings)
-as one FLAT record per account --
+Output is written in the NATIVE v1 shape (snake_case keys,
+enum NAMES as strings) as one FLAT record per account --
 ``{"account_id": <int>, "services": [<Service>, ...], "warehouses": [...],
-"etag": <str>}`` -- to ``<mc_path>/<account_id>/shippingsettings/rows.jsonlines``,
-preserving the existing BigQuery glob
+"etag": <str>}`` -- to 
+``<mc_path>/<account_id>/shippingsettings/rows.jsonlines``, preserving
+the existing BigQuery glob
 (``merchant_center/*/shippingsettings/rows.jsonlines``). The old
 ``{settings, children[]}`` envelope is gone; downstream SQL recovers the
 MCA<->child relationship from the (already migrated) `accounts` table.
@@ -45,8 +46,9 @@ from etils import epath
 from google.api_core import exceptions as gax_exceptions
 from google.shopping import merchant_accounts_v1 as ma
 
-# Key stamped onto every row so downstream code knows the source account. Mirrors
-# resource_downloader.METADATA_KEY. (account_id is also written at top level.)
+# Key stamped onto every row so downstream code knows the source account. 
+# Mirrors resource_downloader.METADATA_KEY.
+# (account_id is also written at top level.)
 METADATA_KEY = 'downloaderMetadata'
 
 # The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
@@ -85,9 +87,14 @@ def _to_dict(msg):
 def _get_account_shipping(client, account_id):
   """Fetches v1 shipping settings for one account, as a native-shape dict.
 
-  Returns None if the account has no shipping settings (NotFound) or is not a
-  valid target for this method (e.g. an aggregator / MCA -> PermissionDenied);
-  otherwise the ShippingSettings dict (snake_case keys, enum names).
+  Args:
+    client: The API client instance used to make the request.
+    account_id: The string or integer ID of the account to query.
+
+  Returns:
+    A ShippingSettings dict with snake_case keys and enum names, or None if
+    the account has no shipping settings (NotFound) or is not a valid target
+    for this method (e.g., an aggregator or MCA resulting in PermissionDenied).
   """
   name = f'accounts/{account_id}/shippingSettings'
   try:
@@ -104,7 +111,8 @@ def _get_account_shipping(client, account_id):
         '(not a sub-/standalone account); skipping', account_id)
     return None
   except gax_exceptions.NotFound:
-    # No shipping settings configured -- mirrors the old Content API 404 swallow.
+    # No shipping settings configured -- 
+    # mirrors the old Content API 404 swallow.
     return None
   return _to_dict(settings)
 
@@ -115,8 +123,9 @@ def download_shipping_settings(
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
-    account_ids: iterable of sub-/standalone Merchant Center account IDs to pull.
-      (Aggregators are skipped automatically -- they are not valid targets.)
+    account_ids: iterable of sub-/standalone Merchant Center account IDs
+    to pull.(Aggregators are skipped automatically -- 
+    they are not valid targets.)
     mc_path: epath.Path to the merchant_center output directory.
     max_workers: max concurrent account downloads. Callers (namely `acit.py`)
       should pass this explicitly so it stays consistent with the other
@@ -140,7 +149,7 @@ def download_shipping_settings(
         METADATA_KEY: {'accountId': account_id},
     }
     output_file = (
-        epath.Path(mc_path) / account_id / 'shippingsettings' / 'rows.jsonlines')
+        epath.Path(mc_path)/account_id/'shippingsettings'/'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w') as f:
       f.write(json.dumps(record) + '\n')

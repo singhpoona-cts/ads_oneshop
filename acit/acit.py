@@ -235,13 +235,13 @@ _ACIT_MC_OUTPUT_DIR = 'merchant_center'
 # NOTE: ALL Merchant Center resources are now pulled from the Merchant API
 # (stable v1), not the Content API. Accounts (Phase 1) via `merchant_accounts`,
 # products (Phase 2) via `merchant_products`, LIA/omnichannel settings (Phase 3)
-# via `merchant_lia`, and shipping settings (Phase 4) via `merchant_shipping` --
-# all in the native v1 shape. `shippingsettings` was the last Content API
-# resource, so the Content API client (`discovery.build('content', 'v2.1')`) and
-# the MCA roll-down machinery have been removed entirely. v1 has no MCA roll-down
-# and aggregators are not valid targets, so the per-(sub)account fan-out modules
-# query subaccounts/standalone accounts directly. `shippingsettings` remains
-# admin-gated, matching the old behavior.
+# via `merchant_lia`, and shipping settings (Phase 4) via `merchant_shipping`
+# -- all in the native v1 shape. `shippingsettings` was the last Content API
+# resource, so the Content API client (`discovery.build('content', 'v2.1')`)
+# and the MCA roll-down machinery have been removed entirely. v1 has no MCA
+# roll-down and aggregators are not valid targets, so the per-(sub)account
+# fan-out modules query subaccounts/standalone accounts directly.
+# `shippingsettings` remains admin-gated, matching the old behavior.
 
 
 def _get_credentials() -> credentials.Credentials:
@@ -398,8 +398,9 @@ def main(_):
   # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
   # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
   # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
-  # we list per (sub)account directly (same account set as products). Admin-gated,
-  # matching the old `liasettings` pull.
+  # we list per (sub)account directly (same account set as products).
+  # Admin-gated,matching the old `liasettings` pull.
+  
   if _ADMIN_RIGHTS.value:
     merchant_lia.download_omnichannel_settings(
         creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
