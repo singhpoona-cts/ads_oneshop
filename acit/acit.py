@@ -106,7 +106,8 @@ WHERE
 """
 
 # WIP: need to query for each campaign type
-# If feed label is not set, then shopping campaigns target all feeds from an account.
+# If feed label is not set, then shopping campaigns
+# target all feeds from an account.
 # TODO: Check local result for PMax (default enabled)
 _GAQL_CAMPAIGN_SETTINGS = """
 SELECT
@@ -228,20 +229,23 @@ _ALL_GAQL = [
     ),
 ]
 
-_ACIT_ADS_OUTPUT_DIR = 'ads'
+_ACIT_ADS_OUTPUT_DIR = flags.DEFINE_string(
+    'ads_output_dir',
+    'ads',
+    'The subdirectory in the output directory for Ads data.',
+)
 
-_ACIT_MC_OUTPUT_DIR = 'merchant_center'
+_ACIT_MC_OUTPUT_DIR = flags.DEFINE_string(
+    'mc_output_dir',
+    'merchant_center',
+    'The subdirectory in the output directory for Merchant Center data.',
+)
 
-# NOTE: ALL Merchant Center resources are now pulled from the Merchant API
-# (stable v1), not the Content API. Accounts (Phase 1) via `merchant_accounts`,
-# products (Phase 2) via `merchant_products`, LIA/omnichannel settings (Phase 3)
-# via `merchant_lia`, and shipping settings (Phase 4) via `merchant_shipping`
-# -- all in the native v1 shape. `shippingsettings` was the last Content API
-# resource, so the Content API client (`discovery.build('content', 'v2.1')`)
-# and the MCA roll-down machinery have been removed entirely. v1 has no MCA
-# roll-down and aggregators are not valid targets, so the per-(sub)account
-# fan-out modules query subaccounts/standalone accounts directly.
-# `shippingsettings` remains admin-gated, matching the old behavior.
+# NOTE: All Merchant Center resources are pulled from the
+# Merchant API (stable v1). We query sub-accounts and standalone
+# accounts directly using the native v1 shape.
+# Accounts and shipping setting requests are admin-gated
+# matching existing permissions.
 
 
 def _get_credentials() -> credentials.Credentials:
@@ -313,8 +317,8 @@ def main(_):
   acit_output_dir.rmtree(missing_ok=True)
   acit_output_dir.mkdir(parents=True)
 
-  ads_path = acit_output_dir / _ACIT_ADS_OUTPUT_DIR
-  mc_path = acit_output_dir / _ACIT_MC_OUTPUT_DIR
+  ads_path = acit_output_dir / _ACIT_ADS_OUTPUT_DIR.value
+  mc_path = acit_output_dir / _ACIT_MC_OUTPUT_DIR.value
 
   # Make sure paths exist
   ads_path.mkdir()
@@ -373,11 +377,8 @@ def main(_):
 
   input_ids = set(_MERCHANT_CENTER_IDS.value)
 
-  # Phase 1 migration: the `accounts` resource is now ingested from the Merchant
-  # API (stable v1) instead of the Content API. This writes the flat, native-v1
-  # per-account files and returns the account topology (advanced/MCA vs
-  # standalone, plus the sub-account -> parent mapping) that drives the per-
-  # account Merchant API pulls below.
+  # Fetch account topology (aggregation structure and standalone accounts) via
+  # Merchant API v1 Accounts service.
   aggregator_ids, standalone_ids, leaf_to_parent = (
       merchant_accounts.download_accounts(
           creds, input_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
@@ -387,30 +388,17 @@ def main(_):
 
   product_account_ids = leaf_ids | (standalone_ids & input_ids)
 
-  # Phase 2 migration: products are ingested from the Merchant API (stable v1)
-  # instead of the Content API. The v1 `Product` already carries its status, so
-  # there is no separate `productstatuses` pull. This writes the native-v1 per-
-  # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
-  # unchanged); the Beam stage splits out status and derives the channel.
+  # Download products data for all accessible leaf and standalone accounts.
   merchant_products.download_products(
       creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
 
-  # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
-  # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
-  # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
-  # we list per (sub)account directly (same account set as products).
-  # Admin-gated,matching the old `liasettings` pull.
+  # Fetch LIA / omnichannel settings directly for each sub-account
 
   if _ADMIN_RIGHTS.value:
     merchant_lia.download_omnichannel_settings(
         creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
 
-  # Phase 4 migration: shipping settings come from the Merchant API (stable v1)
-  # `ShippingSettings` instead of the Content API `shippingsettings`. v1 has no
-  # MCA roll-down and the aggregator itself is not a valid target, so we fetch
-  # per (sub)account directly (same account set as products). Admin-gated,
-  # matching the old `shippingsettings` pull. This was the last Content API
-  # resource.
+  # Fetch shipping settings directly for each sub-account (admin-gated).
   if _ADMIN_RIGHTS.value:
     merchant_shipping.download_shipping_settings(
         creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
