@@ -174,7 +174,7 @@ def main(argv):
 
     # Merchant Center data.
     #
-    # As of the Merchant API migration (Phase 2), each line is a native v1
+    # As of the Merchant API migration for products, each line is a native v1
     # `Product` that already embeds its status (`product_status`).
     # There is no longer a separate `productstatuses` collection / join.
     products = (p
@@ -183,7 +183,7 @@ def main(argv):
                 | 'Products to JSON' >> beam.Map(json.loads))
 
     def convert_lia_settings(row):
-      # Phase 3: native Merchant API v1 omnichannel settings.
+      # Native Merchant API v1 omnichannel settings.
       # `merchant_lia` writes one FLAT record per account --
       #   {"account_id": <int>, "omnichannel_settings":
       # [<OmnichannelSetting>, ...]}

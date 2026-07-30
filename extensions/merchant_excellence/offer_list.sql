@@ -138,7 +138,7 @@ WITH
         AND II.country = targeted_country
   ),
   AllShippingData AS (
-    -- Phase 4: native Merchant API v1 flat per-account shipping settings. The
+    -- Native Merchant API v1 flat per-account shipping settings. The
     -- old {settings, children[]} envelope is gone; each row is one account.
     SELECT
       account_id AS accountId,

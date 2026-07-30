@@ -13,8 +13,8 @@
 # limitations under the License.
 """Merchant Center omnichannel / LIA ingestion via the Merchant API (stable v1).
 
-Phase 3 of the Content API -> Merchant API migration. Replaces the old Content
-API `liasettings.get` (per account) + `liasettings.list` (MCA roll-down) pulls.
+This replaces the old Content API `liasettings.get` (per account) + `liasettings.list` (MCA roll-down) pulls
+as part of the Content API -> Merchant API migration.
 
 The Merchant API has no `liasettings` resource: the Local Inventory Ads /
 local-storefront config now lives in **OmnichannelSettings**, listed per region

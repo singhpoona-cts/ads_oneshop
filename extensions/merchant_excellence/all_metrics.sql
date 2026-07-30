@@ -52,7 +52,7 @@ CREATE OR REPLACE TABLE ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE))
 AS
 WITH
-  -- Phase 3: native Merchant API v1 omnichannel settings. The `liasettings` table
+  -- Native Merchant API v1 omnichannel settings. The `liasettings` table
   -- is now FLAT -- one row per account with a repeated per-region
   -- `omnichannel_settings` list (the old {settings, children[]} envelope is gone;
   -- v1 lists settings per sub-/standalone account directly). Status strings became
@@ -87,7 +87,7 @@ WITH
     FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
   AllShippingData AS (
-    -- Phase 4: native Merchant API v1 flat per-account shipping settings. The
+    -- Native Merchant API v1 flat per-account shipping settings. The
     -- old {settings, children[]} envelope is gone; each row is one account.
     SELECT
       account_id AS accountId,

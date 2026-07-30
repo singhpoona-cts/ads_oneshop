@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// NOTE: As of the Merchant API migration (Phase 2), the product messages below
+// NOTE: As of the Merchant API migration, the product messages below
 // model the **native Merchant API v1 `Product`** shape (snake_case attributes
 // nested under `product_attributes`, `Price` in micros, enums stored as their
 // NAME string, `gtins` repeated, `custom_label_0..4`). The Content API
@@ -44,13 +44,13 @@ message WideProduct {
   optional string account_id = 12;
 }
 
-// Phase 3 migration: Content API `liasettings` -> Merchant API v1
-// `OmnichannelSettings`. v1 has no `liasettings` resource, no MCA roll-down
-// `list`, and the aggregator itself is not a valid parent (PermissionDenied), so
-// settings are listed per (sub)account directly. We therefore drop the old
-// {settings, children[]} envelope and write one FLAT row per account, each with a
-// repeated list of per-region OmnichannelSetting. The MCA<->child relationship is
-// recovered downstream from the (already migrated) `accounts` table.
+// Content API `liasettings` -> Merchant API v1 `OmnichannelSettings` migration:
+// v1 has no `liasettings` resource, no MCA roll-down `list`, and the aggregator
+// itself is not a valid parent (PermissionDenied), so settings are listed per
+// (sub)account directly. We therefore drop the old {settings, children[]} envelope
+// and write one FLAT row per account, each with a repeated list of per-region
+// OmnichannelSetting. The MCA<->child relationship is recovered downstream from
+// the (already migrated) `accounts` table.
 message OmnichannelLiaSettings {
   option (gen_bq_schema.bigquery_opts).table_name = "liasettings";
 

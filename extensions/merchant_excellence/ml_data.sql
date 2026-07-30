@@ -33,7 +33,7 @@ WITH
     JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
       ON C.parent_account = P.account_id
   ),
-  -- Phase 3: native Merchant API v1 omnichannel settings. The `liasettings` table
+  -- Native Merchant API v1 omnichannel settings. The `liasettings` table
   -- is now FLAT -- one row per (sub-/standalone) account with a repeated per-region
   -- `omnichannel_settings` list. The old children-only roll-down (`L.children`) is
   -- gone; the downstream `Account` CTE already INNER JOINs to the parent so only

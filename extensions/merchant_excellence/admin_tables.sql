@@ -12,7 +12,7 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- Phase 3: native Merchant API v1 omnichannel settings. FLAT shape -- one row per
+-- Native Merchant API v1 omnichannel settings. FLAT shape -- one row per
 -- (sub-/standalone) account with a repeated per-region `omnichannel_settings`
 -- list (the old {settings, children[]} envelope is gone). Mirrors the proto
 -- `OmnichannelLiaSettings` (acit/api/v0/storage/schema.proto); the production

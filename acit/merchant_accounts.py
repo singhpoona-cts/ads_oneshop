@@ -13,8 +13,8 @@
 # limitations under the License.
 """Merchant Center *account* ingestion via the Merchant API (stable v1).
 
-Phase 1 of the Content API -> Merchant API migration. This replaces the old
-Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow.
+This replaces the old Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow
+as part of the Content API -> Merchant API migration.
 
 The old monolithic `Account` object is split across many v1 sub-resources,
 so an account is assembled by fanning out:
