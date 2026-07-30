@@ -28,153 +28,151 @@ from google.ads.googleads import client
 
 class TestAcit(parameterized.TestCase):
 
-    def setUp(self):
-        super().setUp()
-        self._old_environ = os.environ.copy()
-        self._logging_cm = self.enter_context(self.assertLogs())
+  def setUp(self):
+    super().setUp()
+    self._old_environ = os.environ.copy()
+    self._logging_cm = self.enter_context(self.assertLogs())
 
-        # Merchant Center data is pulled via the Merchant API (stable v1) gRPC
-        # clients. Stub those out so the tests exercise only the credential / Ads
-        # logic without making real network calls. `download_accounts` returns the
-        # (aggregators, standalones, leaf->parent) topology;
-        # the rest are side-effect only.
-        self.enter_context(
-            mock.patch.object(
-                acit.merchant_accounts,
-                'download_accounts',
-                autospec=True,
-                return_value=(set(), set(), {}),
-            ))
-        self.enter_context(
-            mock.patch.object(acit.merchant_products,
-                              'download_products',
-                              autospec=True))
-        self.enter_context(
-            mock.patch.object(acit.merchant_lia,
-                              'download_omnichannel_settings',
-                              autospec=True))
-        self.enter_context(
-            mock.patch.object(acit.merchant_shipping,
-                              'download_shipping_settings',
-                              autospec=True))
-
-    def tearDown(self):
-        super().tearDown()
-        for k in self._old_environ:
-            os.environ[k] = self._old_environ[k]
-
-    @mock.patch.object(gaql, 'run_query', autospec=True)
-    def test_login_customer_id(self, run_query):
-        ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
-        with mock.patch.object(client,
-                               'GoogleAdsClient',
-                               return_value=ads_client,
-                               autospec=True):
-            run_query.return_value = []
-
-            output_dir = self.create_tempdir()
-            with flagsaver.as_parsed(
-                    customer_id=['123'],
-                    output=str(output_dir),
-            ):
-                acit.main(None)
-                self.assertEqual('123', ads_client.login_customer_id)
-                self.assertEqual('123',
-                                 run_query.call_args.kwargs['customer_id'])
-
-    @mock.patch.object(gaql, 'run_query', autospec=True)
-    def test_login_customer_id_with_subaccount(self, run_query):
-        ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
-        with mock.patch.object(client,
-                               'GoogleAdsClient',
-                               return_value=ads_client,
-                               autospec=True):
-            run_query.return_value = []
-
-            output_dir = self.create_tempdir()
-            with flagsaver.as_parsed(
-                    customer_id=['456:789'],
-                    output=str(output_dir),
-            ):
-                acit.main(None)
-                self.assertEqual('456', ads_client.login_customer_id)
-                self.assertEqual('789',
-                                 run_query.call_args.kwargs['customer_id'])
-
-    @parameterized.named_parameters(
-        {
-            'testcase_name': 'use_oauth',
-            'client_id': 'abc',
-            'client_secret': '123',
-            'refresh_token': '!@#',
-            'expect_is_adc': False,
-        },
-        {
-            'testcase_name': 'no_client_id',
-            'client_id': '',
-            'client_secret': '123',
-            'refresh_token': '!@#',
-            'expect_is_adc': True,
-        },
-        {
-            'testcase_name': 'no_client_secret',
-            'client_id': 'abc',
-            'client_secret': '',
-            'refresh_token': '!@#',
-            'expect_is_adc': True,
-        },
-        {
-            'testcase_name': 'no_refresh_token',
-            'client_id': 'abc',
-            'client_secret': '123',
-            'refresh_token': '',
-            'expect_is_adc': True,
-        },
+    # Merchant Center data is pulled via the Merchant API (stable v1) gRPC
+    # clients. Stub those out so the tests exercise only the credential / Ads
+    # logic without making real network calls. `download_accounts` returns the
+    # (aggregators, standalones, leaf->parent) topology;
+    # the rest are side-effect only.
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_accounts,
+            'download_accounts',
+            autospec=True,
+            return_value=(set(), set(), {}),
+        )
     )
-    @mock.patch.object(gaql, 'run_query', autospec=True)
-    @mock.patch.object(auth, 'default', wraps=auth.default)
-    def test_credentials(
-        self,
-        mock_auth_default,
-        run_query,
-        client_id,
-        client_secret,
-        refresh_token,
-        expect_is_adc,
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_products, 'download_products', autospec=True
+        )
+    )
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_lia, 'download_omnichannel_settings', autospec=True
+        )
+    )
+    self.enter_context(
+        mock.patch.object(
+            acit.merchant_shipping, 'download_shipping_settings', autospec=True
+        )
+    )
+
+  def tearDown(self):
+    super().tearDown()
+    for k in self._old_environ:
+      os.environ[k] = self._old_environ[k]
+
+  @mock.patch.object(gaql, 'run_query', autospec=True)
+  def test_login_customer_id(self, run_query):
+    ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
+    with mock.patch.object(
+        client, 'GoogleAdsClient', return_value=ads_client, autospec=True
     ):
-        os.environ['GOOGLE_ADS_CLIENT_ID'] = client_id
-        os.environ['GOOGLE_ADS_CLIENT_SECRET'] = client_secret
-        os.environ['GOOGLE_ADS_REFRESH_TOKEN'] = refresh_token
+      run_query.return_value = []
 
-        ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
-        with mock.patch.object(client,
-                               'GoogleAdsClient',
-                               return_value=ads_client,
-                               autospec=True):
-            run_query.return_value = []
+      output_dir = self.create_tempdir()
+      with flagsaver.as_parsed(
+          customer_id=['123'],
+          output=str(output_dir),
+      ):
+        acit.main(None)
+        self.assertEqual('123', ads_client.login_customer_id)
+        self.assertEqual('123', run_query.call_args.kwargs['customer_id'])
 
-            output_dir = self.create_tempdir()
-            with flagsaver.as_parsed(output=str(output_dir),):
-                acit.main(None)
-                if expect_is_adc:
-                    mock_auth_default.assert_called()
-                    self.assertTrue(
-                        any([
-                            'application default' in output
-                            for output in self._logging_cm.output
-                        ]),
-                        'use of application default credentials not logged',
-                    )
-                else:
-                    mock_auth_default.assert_not_called()
-                    self.assertTrue(
-                        any([
-                            'oauth' in output
-                            for output in self._logging_cm.output
-                        ]),
-                        'use of oauth credentials not logged',
-                    )
+  @mock.patch.object(gaql, 'run_query', autospec=True)
+  def test_login_customer_id_with_subaccount(self, run_query):
+    ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
+    with mock.patch.object(
+        client, 'GoogleAdsClient', return_value=ads_client, autospec=True
+    ):
+      run_query.return_value = []
+
+      output_dir = self.create_tempdir()
+      with flagsaver.as_parsed(
+          customer_id=['456:789'],
+          output=str(output_dir),
+      ):
+        acit.main(None)
+        self.assertEqual('456', ads_client.login_customer_id)
+        self.assertEqual('789', run_query.call_args.kwargs['customer_id'])
+
+  @parameterized.named_parameters(
+      {
+          'testcase_name': 'use_oauth',
+          'client_id': 'abc',
+          'client_secret': '123',
+          'refresh_token': '!@#',
+          'expect_is_adc': False,
+      },
+      {
+          'testcase_name': 'no_client_id',
+          'client_id': '',
+          'client_secret': '123',
+          'refresh_token': '!@#',
+          'expect_is_adc': True,
+      },
+      {
+          'testcase_name': 'no_client_secret',
+          'client_id': 'abc',
+          'client_secret': '',
+          'refresh_token': '!@#',
+          'expect_is_adc': True,
+      },
+      {
+          'testcase_name': 'no_refresh_token',
+          'client_id': 'abc',
+          'client_secret': '123',
+          'refresh_token': '',
+          'expect_is_adc': True,
+      },
+  )
+  @mock.patch.object(gaql, 'run_query', autospec=True)
+  @mock.patch.object(auth, 'default', wraps=auth.default)
+  def test_credentials(
+      self,
+      mock_auth_default,
+      run_query,
+      client_id,
+      client_secret,
+      refresh_token,
+      expect_is_adc,
+  ):
+    os.environ['GOOGLE_ADS_CLIENT_ID'] = client_id
+    os.environ['GOOGLE_ADS_CLIENT_SECRET'] = client_secret
+    os.environ['GOOGLE_ADS_REFRESH_TOKEN'] = refresh_token
+
+    ads_client = mock.create_autospec(client.GoogleAdsClient, instance=True)
+    with mock.patch.object(
+        client, 'GoogleAdsClient', return_value=ads_client, autospec=True
+    ):
+      run_query.return_value = []
+
+      output_dir = self.create_tempdir()
+      with flagsaver.as_parsed(
+          output=str(output_dir),
+      ):
+        acit.main(None)
+        if expect_is_adc:
+          mock_auth_default.assert_called()
+          self.assertTrue(
+              any([
+                  'application default' in output
+                  for output in self._logging_cm.output
+              ]),
+              'use of application default credentials not logged',
+          )
+        else:
+          mock_auth_default.assert_not_called()
+          self.assertTrue(
+              any(['oauth' in output for output in self._logging_cm.output]),
+              'use of oauth credentials not logged',
+          )
 
 
 if __name__ == '__main__':
-    absltest.main()
+  absltest.main()

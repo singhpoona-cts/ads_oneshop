@@ -16,7 +16,7 @@
 Phase 1 of the Content API -> Merchant API migration. This replaces the old
 Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow.
 
-The old monolithic `Account` object is split across many v1 sub-resources, 
+The old monolithic `Account` object is split across many v1 sub-resources,
 so an account is assembled by fanning out:
 
 accounts/{id}                      core Account
@@ -26,12 +26,12 @@ accounts/{id}/businessIdentity     BusinessIdentity
 accounts/{id}/automaticImprovements   AutomaticImprovements
 accounts/{id}/users (list)         User
 accounts/{id}/relationships (list) AccountRelationship
-accounts/{id}/services (list)  AccountService    
+accounts/{id}/services (list)  AccountService
 (was: adsLinks / accountManagement)
 
 Output is written in the NATIVE v1 shape (no legacy Content API field names):
-one flat JSON record per account, to 
-``<mc_path>/<account_id>/accounts/rows.jsonlines``.That per-account file 
+one flat JSON record per account, to
+``<mc_path>/<account_id>/accounts/rows.jsonlines``.That per-account file
 layout keeps the existing BigQuery glob
 (``merchant_center/*/accounts/rows.jsonlines``) working unchanged.
 """
@@ -70,207 +70,270 @@ _MAX_WORKERS = 8
 
 
 def _retry(fn, *, what, attempts=6):
-    """Calls `fn` with exponential backoff on transient server errors."""
-    delay = 1.0
-    for i in range(1, attempts + 1):
-        try:
-            return fn()
-        except _TRANSIENT as e:
-            if i == attempts:
-                raise
-            logging.warning(
-                'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-                type(e).__name__,
-                what,
-                i,
-                attempts,
-                delay,
-            )
-            time.sleep(delay)
-            delay = min(delay * 2, 16.0)
+  """Calls `fn` with exponential backoff on transient server errors."""
+  delay = 1.0
+  for i in range(1, attempts + 1):
+    try:
+      return fn()
+    except _TRANSIENT as e:
+      if i == attempts:
+        raise
+      logging.warning(
+          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
+          type(e).__name__, what, i, attempts, delay,
+      )
+      time.sleep(delay)
+      delay = min(delay * 2, 16.0)
 
 
 def _to_dict(msg) -> Any:
-    """Proto -> dict in native v1 shape: snake_case keys,
-  enum *names* (not ints)."""
-    if msg is None:
-        return None
-    return type(msg).to_dict(msg, use_integers_for_enums=False)
+  """Proto -> dict in native v1 shape.
+
+  Args:
+    msg: The protobuf message to convert into a dictionary.
+
+  Returns:
+    A dictionary representation of the proto message in native v1 shape with
+    snake_case keys and string enum names, or None if the input message is
+    None.
+  """
+
+  if msg is None:
+    return None
+  return type(msg).to_dict(msg, use_integers_for_enums=False)
 
 
 class _Clients:
-    """Bundle of v1 service clients, all sharing one credential."""
+  """Bundle of v1 service clients, all sharing one credential."""
 
-    def __init__(self, credentials):
-        self.accounts = ma.AccountsServiceClient(credentials=credentials)
-        self.business_info = ma.BusinessInfoServiceClient(
-            credentials=credentials)
-        self.homepage = ma.HomepageServiceClient(credentials=credentials)
-        self.business_identity = ma.BusinessIdentityServiceClient(
-            credentials=credentials)
-        self.automatic_improvements = ma.AutomaticImprovementsServiceClient(
-            credentials=credentials)
-        self.users = ma.UserServiceClient(credentials=credentials)
-        self.relationships = ma.AccountRelationshipsServiceClient(
-            credentials=credentials)
-        self.services = ma.AccountServicesServiceClient(credentials=credentials)
+  def __init__(self, credentials):
+    self.accounts = ma.AccountsServiceClient(credentials=credentials)
+    self.business_info = ma.BusinessInfoServiceClient(
+        credentials=credentials)
+    self.homepage = ma.HomepageServiceClient(credentials=credentials)
+    self.business_identity = ma.BusinessIdentityServiceClient(
+        credentials=credentials)
+    self.automatic_improvements = ma.AutomaticImprovementsServiceClient(
+        credentials=credentials)
+    self.users = ma.UserServiceClient(credentials=credentials)
+    self.relationships = ma.AccountRelationshipsServiceClient(
+        credentials=credentials)
+    self.services = ma.AccountServicesServiceClient(
+        credentials=credentials)
 
 
 def _get_or_none(fn, *, what):
-    """Single-object getter tolerant of NOT_FOUND / PERMISSION_DENIED 
-  / FAILED_PRECONDITION."""
-    try:
-        return _to_dict(_retry(fn, what=what))
-    except gax_exceptions.NotFound:
-        logging.info('%s: NOT_FOUND', what)
-        return None
-    except gax_exceptions.PermissionDenied as e:
-        logging.warning('%s: PERMISSION_DENIED (%s)', what, e.message)
-        return None
-    except gax_exceptions.FailedPrecondition as e:
-        logging.warning('%s: FAILED_PRECONDITION (%s)', what, e.message)
-        return None
+  """Single-object getter tolerant of common API error states.
+
+  Args:
+    fn: A zero-argument callable (e.g., a lambda) that executes an API call.
+    what: A human-readable label string for logging in case of errors.
+
+  Returns:
+    A dictionary representation of the fetched object, or None if the request
+    results in NOT_FOUND, PERMISSION_DENIED, or FAILED_PRECONDITION.
+  """
+
+  try:
+    return _to_dict(_retry(fn, what=what))
+  except gax_exceptions.NotFound:
+    logging.info('%s: NOT_FOUND', what)
+    return None
+  except gax_exceptions.PermissionDenied as e:
+    logging.warning('%s: PERMISSION_DENIED (%s)', what, e.message)
+    return None
+  except gax_exceptions.FailedPrecondition as e:
+    logging.warning('%s: FAILED_PRECONDITION (%s)', what, e.message)
+    return None
 
 
 def _service_type(service_msg) -> str:
-    """Returns the set oneof member name (UPPER)
-    for an AccountService, or ''."""
-    which = type(service_msg).pb(service_msg).WhichOneof('service_type')
-    return which.upper() if which else ''
+  """Returns the set oneof member name (UPPER) for an AccountService.
+
+  Args:
+    service_msg: The AccountService protobuf message.
+
+  Returns:
+    The upper-case string name of the active 'service_type' oneof field, or
+    an empty string if none is set.
+  """
+
+  which = type(service_msg).pb(service_msg).WhichOneof('service_type')
+  return which.upper() if which else ''
 
 
 def _build_record(clients: _Clients, account_id: str, core: Dict[str, Any],
                   parent: str, is_advanced: bool) -> Dict[str, Any]:
-    """Fans out across v1 sub-resources
-    to build one flat native-shape record."""
+  """Fans out across v1 sub-resources to build one flat native-shape record.
 
-    name = clients.accounts.account_path(account_id)  # "accounts/{id}"
+  Args:
+    clients: The `_Clients` object containing initialized API
+    client connections.
+    account_id: The Merchant Center account ID as a string.
+    core: A dictionary containing the core Account information.
+    parent: The parent account ID string, or an empty string if top-level.
+    is_advanced: Whether the account is an advanced/MCA account.
 
-    services_msgs = _retry(
-        lambda: list(
-            clients.services.list_account_services(
-                ma.ListAccountServicesRequest(parent=name))),
-        what=f'list_account_services:{account_id}',
-    )
-    services = []
-    for svc in services_msgs:
-        d = _to_dict(svc)
-        # Drop the empty oneof messages; expose the set one as `service_type`.
-        for k in _SERVICE_TYPE_FIELDS:
-            d.pop(k, None)
-        d['service_type'] = _service_type(svc)
-        services.append(d)
+  Returns:
+    A dictionary representing the aggregated native v1 account record,
+    including core fields, parent/child relationship metadata, and attached
+    sub-resources (homepage, business info, users, etc.).
+  """
 
-    return {
-        # --- core Account (free: already fetched during discovery) ---
-        'account_id':
-            account_id,
-        'account_name':
-            core.get('account_name'),
-        'adult_content':
-            core.get('adult_content'),
-        'test_account':
-            core.get('test_account'),
-        'time_zone':
-            core.get('time_zone'),
-        'language_code':
-            core.get('language_code'),
-        # relationship (replaces the legacy {settings, children[]} rollup)
-        'is_advanced':
-            is_advanced,
-        'parent_account':
-            parent,
-        # sub-resources (each was a field on the old monolithic Account)
-        'homepage':
-            _get_or_none(lambda: clients.homepage.get_homepage(
-                name=clients.homepage.homepage_path(account_id)),
-                         what=f'homepage:{account_id}'),
-        'business_info':
-            _get_or_none(lambda: clients.business_info.get_business_info(
-                name=clients.business_info.business_info_path(account_id)),
-                         what=f'business_info:{account_id}'),
-        'business_identity':
-            _get_or_none(
-                lambda: clients.business_identity.get_business_identity(
-                    name=clients.business_identity.business_identity_path(
-                        account_id)),
-                what=f'business_identity:{account_id}'),
-        'automatic_improvements':
-            _get_or_none(lambda: clients.automatic_improvements.
-                         get_automatic_improvements(
-                             name=clients.automatic_improvements.
-                             automatic_improvements_path(account_id)),
-                         what=f'automatic_improvements:{account_id}'),
-        'users': [
-            _to_dict(u) for u in _retry(lambda: list(
-                clients.users.list_users(ma.ListUsersRequest(parent=name))),
-                                        what=f'list_users:{account_id}')
-        ],
-        'account_relationships':
-            [
-                _to_dict(r) for r in _retry(
-                    lambda: list(
-                        clients.relationships.list_account_relationships(
-                            ma.ListAccountRelationshipsRequest(parent=name))),
-                    what=f'list_account_relationships:{account_id}')
-            ],
-        'account_services':
-            services,
-    }
+  name = clients.accounts.account_path(account_id)  # "accounts/{id}"
+
+  services_msgs = _retry(
+      lambda: list(
+          clients.services.list_account_services(
+              ma.ListAccountServicesRequest(parent=name))),
+      what=f'list_account_services:{account_id}',
+  )
+  services = []
+  for svc in services_msgs:
+    d = _to_dict(svc)
+    # Drop the empty oneof messages; expose the set one as `service_type`.
+    for k in _SERVICE_TYPE_FIELDS:
+      d.pop(k, None)
+    d['service_type'] = _service_type(svc)
+    services.append(d)
+
+  return {
+      # --- core Account (free: already fetched during discovery) ---
+      'account_id':
+      account_id,
+      'account_name':
+      core.get('account_name'),
+      'adult_content':
+      core.get('adult_content'),
+      'test_account':
+      core.get('test_account'),
+      'time_zone':
+      core.get('time_zone'),
+      'language_code':
+      core.get('language_code'),
+      # relationship (replaces the legacy {settings, children[]} rollup)
+      'is_advanced':
+      is_advanced,
+      'parent_account':
+      parent,
+      # sub-resources (each was a field on the old monolithic Account)
+      'homepage':
+      _get_or_none(
+          lambda: clients.homepage.get_homepage(
+              name=clients.homepage.homepage_path(account_id)),
+          what=f'homepage:{account_id}'),
+      'business_info':
+      _get_or_none(
+          lambda: clients.business_info.get_business_info(
+              name=clients.business_info.business_info_path(account_id)),
+          what=f'business_info:{account_id}'),
+      'business_identity':
+      _get_or_none(
+          lambda: clients.business_identity.get_business_identity(
+              name=clients.business_identity.business_identity_path(
+                  account_id)),
+          what=f'business_identity:{account_id}'),
+      'automatic_improvements':
+      _get_or_none(
+          lambda: clients.automatic_improvements.get_automatic_improvements(
+              name=clients.automatic_improvements.
+              automatic_improvements_path(account_id)),
+          what=f'automatic_improvements:{account_id}'),
+      'users': [
+          _to_dict(u) for u in _retry(
+              lambda: list(
+                  clients.users.list_users(
+                      ma.ListUsersRequest(parent=name))),
+              what=f'list_users:{account_id}')
+      ],
+      'account_relationships': [
+          _to_dict(r) for r in _retry(
+              lambda: list(
+                  clients.relationships.list_account_relationships(
+                      ma.ListAccountRelationshipsRequest(parent=name))),
+              what=f'list_account_relationships:{account_id}')
+      ],
+      'account_services':
+      services,
+  }
 
 
 def discover_topology(clients: _Clients, input_ids):
-    """Classifies input accounts and enumerates
-    sub-accounts (replaces authinfo).
+  """Classifies input accounts and enumerates sub-accounts.
+
+  Replaces authinfo by organizing accounts into top-level aggregators,
+  standalone accounts, and child accounts.
+
+  Args:
+    clients: The `_Clients` object containing initialized API client
+      connections.
+    input_ids: An iterable of account IDs (e.g., strings or integers) to
+      process.
 
   Returns:
-    aggregator_ids: set of advanced (MCA) account IDs from the input.
-    standalone_ids: set of standalone (non-advanced) input account IDs.
-    leaf_to_parent: {child_id: aggregator_id} for every sub-account.
-    cores: {account_id: core Account dict} (sub-account cores come free from the
-      listSubaccounts response; only top-level/advanced accounts cost a get).
+    A tuple containing:
+      - aggregator_ids: set of advanced (MCA) account IDs from the input.
+      - standalone_ids: set of standalone (non-advanced) input account IDs.
+      - leaf_to_parent: {child_id: aggregator_id} for every sub-account.
+      - cores: {account_id: core Account dict} (sub-account cores come free
+        from the listSubaccounts response; only top-level/advanced accounts
+        cost a get).
   """
-    aggregator_ids, standalone_ids = set(), set()
-    leaf_to_parent = {}
-    cores = {}
-    for acc_id in input_ids:
-        provider = clients.accounts.account_path(acc_id)
-        try:
-            subs = _retry(lambda: list(
-                clients.accounts.list_sub_accounts(
-                    ma.ListSubAccountsRequest(provider=provider))),
-                          what=f'list_sub_accounts:{acc_id}')
-        except gax_exceptions.PermissionDenied as e:
-            logging.warning('No access to account %s (%s); skipping.', acc_id,
-                            e.message)
-            continue
-        if subs:
-            logging.info('Account %s is advanced/MCA with %d sub-accounts',
-                         acc_id, len(subs))
-            aggregator_ids.add(acc_id)
-            cores[acc_id] = _to_dict(
-                _retry(lambda: clients.accounts.get_account(name=provider),
-                       what=f'get_account:{acc_id}'))
-            for s in subs:
-                sid = str(s.account_id)
-                cores[sid] = _to_dict(
-                    s)  # core from list response -- 0 extra calls
-                leaf_to_parent[sid] = acc_id
-        else:
-            logging.info('Account %s is standalone', acc_id)
-            standalone_ids.add(acc_id)
-            cores[acc_id] = _to_dict(
-                _retry(lambda: clients.accounts.get_account(name=provider),
-                       what=f'get_account:{acc_id}'))
-    return aggregator_ids, standalone_ids, leaf_to_parent, cores
+  aggregator_ids, standalone_ids = set(), set()
+  leaf_to_parent = {}
+  cores = {}
+  for acc_id in input_ids:
+    provider = clients.accounts.account_path(acc_id)
+    try:
+      subs = _retry(
+          lambda p=provider: list(
+              clients.accounts.list_sub_accounts(
+                  ma.ListSubAccountsRequest(provider=p)
+              )
+          ),
+          what=f'list_sub_accounts:{acc_id}',
+      )
+    except gax_exceptions.PermissionDenied as e:
+      logging.warning(
+          'No access to account %s (%s); skipping.', acc_id, e.message
+      )
+      continue
+    if subs:
+      logging.info(
+          'Account %s is advanced/MCA with %d sub-accounts',
+          acc_id,
+          len(subs),
+      )
+      aggregator_ids.add(acc_id)
+      cores[acc_id] = _to_dict(
+          _retry(
+              lambda p=provider: clients.accounts.get_account(name=p),
+              what=f'get_account:{acc_id}',
+          )
+      )
+      for s in subs:
+        sid = str(s.account_id)
+        cores[sid] = _to_dict(
+            s
+        )  # core from list response -- 0 extra calls
+        leaf_to_parent[sid] = acc_id
+    else:
+      logging.info('Account %s is standalone', acc_id)
+      standalone_ids.add(acc_id)
+      cores[acc_id] = _to_dict(
+          _retry(
+              lambda p=provider: clients.accounts.get_account(name=p),
+              what=f'get_account:{acc_id}',
+          )
+      )
+  return aggregator_ids, standalone_ids, leaf_to_parent, cores
 
 
 def download_accounts(credentials,
                       input_ids,
                       mc_path,
                       max_workers=_MAX_WORKERS):
-    """Downloads accounts from Merchant API v1
-    and writes flat per-account files.
+  """Downloads accounts from Merchant API v1 and writes flat files.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
@@ -284,31 +347,31 @@ def download_accounts(credentials,
     (aggregator_ids, standalone_ids, leaf_to_parent) topology for reuse by the
     still-on-Content-API resource pulls (products, liasettings, etc.).
   """
-    clients = _Clients(credentials)
-    input_ids = list(input_ids)
-    aggregator_ids, standalone_ids, leaf_to_parent, cores = discover_topology(
-        clients, input_ids)
+  clients = _Clients(credentials)
+  input_ids = list(input_ids)
+  aggregator_ids, standalone_ids, leaf_to_parent, cores = discover_topology(
+      clients, input_ids)
 
-    def _process(account_id):
-        parent = leaf_to_parent.get(account_id)
-        is_advanced = account_id in aggregator_ids
-        record = _build_record(clients, account_id, cores[account_id], parent,
-                               is_advanced)
-        output_file = (epath.Path(mc_path) / account_id / 'accounts' /
-                       'rows.jsonlines')
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        with output_file.open('w') as f:
-            f.write(json.dumps(record) + '\n')
-        return account_id
+  def _process(account_id):
+    parent = leaf_to_parent.get(account_id)
+    is_advanced = account_id in aggregator_ids
+    record = _build_record(clients, account_id, cores[account_id], parent,
+                           is_advanced)
+    output_file = (epath.Path(mc_path) / account_id / 'accounts' /
+                   'rows.jsonlines')
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open('w') as f:
+      f.write(json.dumps(record) + '\n')
+    return account_id
 
-    with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        future_to_id = {ex.submit(_process, aid): aid for aid in cores}
-        for done in futures.as_completed(future_to_id):
-            aid = future_to_id[done]
-            done.result()  # surface exceptions
-            logging.info('Wrote account record for %s', aid)
+  with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+    future_to_id = {ex.submit(_process, aid): aid for aid in cores}
+    for done in futures.as_completed(future_to_id):
+      aid = future_to_id[done]
+      done.result()  # surface exceptions
+      logging.info('Wrote account record for %s', aid)
 
-    logging.info(
-        'Merchant API accounts: %d advanced, %d standalone, %d sub-accounts',
-        len(aggregator_ids), len(standalone_ids), len(leaf_to_parent))
-    return aggregator_ids, standalone_ids, leaf_to_parent
+  logging.info(
+      'Merchant API accounts: %d advanced, %d standalone, %d sub-accounts',
+      len(aggregator_ids), len(standalone_ids), len(leaf_to_parent))
+  return aggregator_ids, standalone_ids, leaf_to_parent

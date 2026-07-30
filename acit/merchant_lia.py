@@ -24,11 +24,11 @@ MCA roll-down `list`, and the aggregator itself is NOT a valid parent for this
 method (it returns ``PermissionDenied`` -- "only subaccounts and standalone
 accounts"). So we pull per (sub)account directly and never query the aggregator.
 
-Output is written in the NATIVE v1 shape 
+Output is written in the NATIVE v1 shape
 (snake_case keys, enum NAMES as strings) as one FLAT record per account --
-``{"account_id": <int>, "omnichannel_settings": [<OmnichannelSetting>, ...]}`` 
+``{"account_id": <int>, "omnichannel_settings": [<OmnichannelSetting>, ...]}``
 -- to ``<mc_path>/<account_id>/liasettings/rows.jsonlines``,
-preserving the existing BigQuery glob 
+preserving the existing BigQuery glob
 (``merchant_center/*/liasettings/*.jsonlines``). The old
 ``{settings, children[]}`` envelope is gone; downstream SQL recovers the
 MCA<->child relationship from the (already migrated) `accounts` table.
@@ -61,35 +61,29 @@ _MAX_WORKERS = 8
 
 
 def _retry(fn, *, what, attempts=6):
-    """Calls `fn` with exponential backoff on transient server errors."""
-    delay = 1.0
-    for i in range(1, attempts + 1):
-        try:
-            return fn()
-        except _TRANSIENT as e:
-            if i == attempts:
-                raise
-            logging.warning(
-                'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-                type(e).__name__,
-                what,
-                i,
-                attempts,
-                delay,
-            )
-            time.sleep(delay)
-            delay = min(delay * 2, 16.0)
+  """Calls `fn` with exponential backoff on transient server errors."""
+  delay = 1.0
+  for i in range(1, attempts + 1):
+    try:
+      return fn()
+    except _TRANSIENT as e:
+      if i == attempts:
+        raise
+      logging.warning(
+          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
+          type(e).__name__, what, i, attempts, delay,
+      )
+      time.sleep(delay)
+      delay = min(delay * 2, 16.0)
 
 
 def _to_dict(msg):
-    """Proto -> dict in native v1 shape:
-    snake_case keys,enum *names* (not ints)."""
-
-    return type(msg).to_dict(msg, use_integers_for_enums=False)
+  """Proto -> dict in native v1 shape: snake_case keys,enum *names* ."""
+  return type(msg).to_dict(msg, use_integers_for_enums=False)
 
 
 def _list_account_omnichannel(client, account_id):
-    """Lists v1 omnichannel settings for one account, as native-shape dicts.
+  """Lists v1 omnichannel settings for one account, as native-shape dicts.
 
   Args:
     client: The API client instance used to make the request.
@@ -100,92 +94,91 @@ def _list_account_omnichannel(client, account_id):
     the account is not a valid parent for this method (e.g., an aggregator
     or MCA resulting in PermissionDenied).
   """
-    parent = f'accounts/{account_id}'
-    try:
-        pager = _retry(
-            lambda: client.list_omnichannel_settings(
-                request=ma.ListOmnichannelSettingsRequest(
-                    parent=parent, page_size=_PAGE_SIZE)),
-            what=f'list_omnichannel_settings:{account_id}',
-        )
-    except gax_exceptions.PermissionDenied:
-        # Aggregators/MCAs are not valid parents --
-        # "only subaccounts and standalone
-        # accounts". The old Content API aggregator
-        # `get` returned empty anyway.
-        logging.info(
-            'Omnichannel settings not accessible for %s '
-            '(not a sub-/standalone account); skipping', account_id)
-        return None
-    except gax_exceptions.NotFound:
-        return []
+  parent = f'accounts/{account_id}'
+  try:
+    pager = _retry(
+        lambda: client.list_omnichannel_settings(
+            request=ma.ListOmnichannelSettingsRequest(
+                parent=parent, page_size=_PAGE_SIZE)),
+        what=f'list_omnichannel_settings:{account_id}',
+    )
+  except gax_exceptions.PermissionDenied:
+    # Aggregators/MCAs are not valid parents
+    # "only subaccounts and standalone
+    # accounts". The old Content API aggregator `get` returned empty anyway.
+    logging.info(
+        'Omnichannel settings not accessible for %s '
+        '(not a sub-/standalone account); skipping', account_id)
+    return None
+  except gax_exceptions.NotFound:
+    return []
 
-    rows = []
-    it = iter(pager)
-    while True:
-        try:
-            setting = _retry(
-                lambda: next(it, None),
-                what=f'list_omnichannel_settings_page:{account_id}')
-        except StopIteration:
-            break
-        if setting is None:
-            break
-        rows.append(_to_dict(setting))
-    return rows
+  rows = []
+  it = iter(pager)
+  while True:
+    try:
+      setting = _retry(
+          lambda: next(it, None),
+          what=f'list_omnichannel_settings_page:{account_id}')
+    except StopIteration:
+      break
+    if setting is None:
+      break
+    rows.append(_to_dict(setting))
+  return rows
 
 
 def download_omnichannel_settings(credentials,
                                   account_ids,
                                   mc_path,
                                   max_workers=_MAX_WORKERS):
-    """Downloads omnichannel/LIA settings from Merchant API v1,
-  one file per account.
+  """Downloads omnichannel/LIA settings from Merchant API v1.
+
+  Writes output to one file per account.
 
   Args:
     credentials: Google credentials (same as used for the Ads/Content APIs).
     account_ids: iterable of sub-/standalone Merchant Center account
-    IDs to pull. (Aggregators are skipped automatically 
-    -- they are not valid parents.)
+      IDs to pull. (Aggregators are skipped automatically-- they
+      are not valid parents.)
     mc_path: epath.Path to the merchant_center output directory.
     max_workers: max concurrent account downloads. Callers (namely `acit.py`)
       should pass this explicitly so it stays consistent with the other
       Merchant API ingestion stages.
   """
-    client = ma.OmnichannelSettingsServiceClient(credentials=credentials)
-    account_ids = list(account_ids)
+  client = ma.OmnichannelSettingsServiceClient(credentials=credentials)
+  account_ids = list(account_ids)
 
-    def _process(account_id):
-        rows = _list_account_omnichannel(client, account_id)
-        # None (not accessible) or [] (no settings)
-        # -> write nothing; downstream MEX
-        # LEFT JOINs default such accounts to "not implemented".
-        if not rows:
-            return account_id, 0
-        record = {
-            'account_id': int(account_id),
-            'omnichannel_settings': rows,
-            METADATA_KEY: {
-                'accountId': account_id
-            },
-        }
-        output_file = (epath.Path(mc_path) / account_id / 'liasettings' /
-                       'rows.jsonlines')
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        with output_file.open('w') as f:
-            f.write(json.dumps(record) + '\n')
-        return account_id, len(rows)
+  def _process(account_id):
+    rows = _list_account_omnichannel(client, account_id)
+    # None (not accessible) or [] (no settings) -> write nothing;
+    # LEFT JOINs default such accounts to "not implemented".
+    if not rows:
+      return account_id, 0
+    record = {
+        'account_id': int(account_id),
+        'omnichannel_settings': rows,
+        METADATA_KEY: {
+            'accountId': account_id
+        },
+    }
+    output_file = (epath.Path(mc_path) / account_id / 'liasettings' /
+                   'rows.jsonlines')
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open('w') as f:
+      f.write(json.dumps(record) + '\n')
+    return account_id, len(rows)
 
-    total = 0
-    with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
-        for done in futures.as_completed(future_to_id):
-            account_id, n = done.result()  # surface exceptions
-            total += n
-            if n:
-                logging.info('Wrote %d omnichannel setting(s) for %s', n,
-                             account_id)
+  total = 0
+  with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
+    for done in futures.as_completed(future_to_id):
+      account_id, n = done.result()  # surface exceptions
+      total += n
+      if n:
+        logging.info('Wrote %d omnichannel setting(s) for %s', n,
+                     account_id)
 
-    logging.info(
-        'Merchant API omnichannel: %d account(s) queried, %d setting(s) total',
-        len(account_ids), total)
+  logging.info(
+      'Merchant API omnichannel: %d account(s) queried, %d setting(s) total',
+      len(account_ids), total)

@@ -31,9 +31,10 @@ from google.ads.googleads import client
 from google.auth import credentials
 from google.oauth2 import credentials as oauth_credentials
 
+
 if sys.version_info < (3, 9, 0):
-    # Required for union operators
-    raise RuntimeError('Python 3.9 or greater required.')
+  # Required for union operators
+  raise RuntimeError('Python 3.9 or greater required.')
 
 ADS_API_VERSION = 'v22'
 
@@ -42,9 +43,11 @@ _OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 _CUSTOMER_IDS = flags.DEFINE_multi_string(
     'customer_id',
     '',
-    ('The customer ID to query. May be specified multiple times. Expands'
-     ' MCCs. Accepts "login_customer_id:customer_id" if a separate login'
-     ' customer ID is required.'),
+    (
+        'The customer ID to query. May be specified multiple times. Expands'
+        ' MCCs. Accepts "login_customer_id:customer_id" if a separate login'
+        ' customer ID is required.'
+    ),
 )
 
 _MERCHANT_CENTER_IDS = flags.DEFINE_multi_string(
@@ -65,15 +68,18 @@ _ADMIN_RIGHTS = flags.DEFINE_boolean(
     'Whether to run against Merchant Center with admin privileges.',
 )
 
-_VALIDATE_ONLY = flags.DEFINE_boolean('validate_only', False,
-                                      'Whether to validate GAQL queries only.')
+_VALIDATE_ONLY = flags.DEFINE_boolean(
+    'validate_only', False, 'Whether to validate GAQL queries only.'
+)
 
 _MC_MAX_WORKERS = flags.DEFINE_integer(
     'mc_max_workers',
     8,
-    ('Max concurrent worker threads used by each Merchant API v1 '
-     'ingestion stage (accounts, products, LIA, shipping). Passed '
-     'explicitly to every stage so they stay consistent with each other.'),
+    (
+        'Max concurrent worker threads used by each Merchant API v1 '
+        'ingestion stage (accounts, products, LIA, shipping). Passed '
+        'explicitly to every stage so they stay consistent with each other.'
+    ),
 )
 
 # NOTE: Always add customer.id to a query for uniqueness.
@@ -239,27 +245,27 @@ _ACIT_MC_OUTPUT_DIR = 'merchant_center'
 
 
 def _get_credentials() -> credentials.Credentials:
-    refresh_token = os.environ.get('GOOGLE_ADS_REFRESH_TOKEN', '').strip()
-    client_id = os.environ.get('GOOGLE_ADS_CLIENT_ID', '').strip()
-    client_secret = os.environ.get('GOOGLE_ADS_CLIENT_SECRET', '').strip()
-    if not (refresh_token and client_id and client_secret):
-        logging.info('Using application default credentials')
-        creds, _ = auth.default()
-        assert isinstance(creds, credentials.Credentials)
-        return creds
-    else:
-        logging.info('Using oauth credentials')
-        return oauth_credentials.Credentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri=_OAUTH_TOKEN_ENDPOINT,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
+  refresh_token = os.environ.get('GOOGLE_ADS_REFRESH_TOKEN', '').strip()
+  client_id = os.environ.get('GOOGLE_ADS_CLIENT_ID', '').strip()
+  client_secret = os.environ.get('GOOGLE_ADS_CLIENT_SECRET', '').strip()
+  if not (refresh_token and client_id and client_secret):
+    logging.info('Using application default credentials')
+    creds, _ = auth.default()
+    assert isinstance(creds, credentials.Credentials)
+    return creds
+  else:
+    logging.info('Using oauth credentials')
+    return oauth_credentials.Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=_OAUTH_TOKEN_ENDPOINT,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
 
 
 def _parse_login_customer_ids(customer_ids: list[str]) -> list[tuple[str, str]]:
-    """Extracts login_customer_id:customer_id pairs from input.
+  """Extracts login_customer_id:customer_id pairs from input.
 
   If no `:` delimiter is given, assume the customer ID is a login customer ID.
 
@@ -270,162 +276,154 @@ def _parse_login_customer_ids(customer_ids: list[str]) -> list[tuple[str, str]]:
       A login customer ID, customer ID tuple. May be identical if no login
       Customer ID given.
   """
-    login_cid_pairs = []
-    for customer_id in customer_ids:
-        login_cid, *rest = customer_id.split(':')
-        customer_id = rest[0] if rest else login_cid
-        login_cid_pairs.append((login_cid, customer_id))
-    return login_cid_pairs
+  login_cid_pairs = []
+  for customer_id in customer_ids:
+    login_cid, *rest = customer_id.split(':')
+    customer_id = rest[0] if rest else login_cid
+    login_cid_pairs.append((login_cid, customer_id))
+  return login_cid_pairs
 
 
 def main(_):
-    creds = _get_credentials()
-    developer_token = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN')
-    if _VALIDATE_ONLY.value:
-        ads_client = client.GoogleAdsClient(
-            credentials=creds,
-            developer_token=developer_token,
-            version=ADS_API_VERSION,
-        )
-        login_customer_id, customer_id = next(
-            iter(_parse_login_customer_ids(_CUSTOMER_IDS.value)))
-        ads_client.login_customer_id = login_customer_id
-        for resource, query, mode in _ALL_GAQL:
-            gaql.run_query(
-                query=query,
-                ads_client=ads_client,
-                customer_id=customer_id,
-                validate_only=True,
-                use_test_accounts=gaql.USE_TEST_ACCOUNTS.value,
-            )
-        return
-
-    acit_output_dir = _OUTPUT_DIR.value
-
-    # Clear path
-    acit_output_dir.rmtree(missing_ok=True)
-    acit_output_dir.mkdir(parents=True)
-
-    ads_path = acit_output_dir / _ACIT_ADS_OUTPUT_DIR
-    mc_path = acit_output_dir / _ACIT_MC_OUTPUT_DIR
-
-    # Make sure paths exist
-    ads_path.mkdir()
-    mc_path.mkdir()
-
-    # Download ads data
-    logging.info(
-        'Ads YAML: %s',
-        os.getenv('GOOGLE_ADS_CONFIGURATION_FILE_PATH', 'Not set'),
+  creds = _get_credentials()
+  developer_token = os.environ.get('GOOGLE_ADS_DEVELOPER_TOKEN')
+  if _VALIDATE_ONLY.value:
+    ads_client = client.GoogleAdsClient(
+        credentials=creds,
+        developer_token=developer_token,
+        version=ADS_API_VERSION,
     )
-    logging.info('Loading Ads data...')
-    # Only load constants once
-    constants_gaql = iter(
-        [query for query in _ALL_GAQL if query[2] == gaql.QueryMode.SINGLE])
-    accounts_gaql = [
-        query for query in _ALL_GAQL if query[2] != gaql.QueryMode.SINGLE
-    ]
-    for login_customer_id, customer_id in _parse_login_customer_ids(
-            _CUSTOMER_IDS.value):
-        logging.info('Processing Customer ID %s', customer_id)
-        ads_client = client.GoogleAdsClient(
-            credentials=creds,
-            developer_token=developer_token,
-            version=ADS_API_VERSION,
-        )
-        ads_client.login_customer_id = login_customer_id
-        # constants_gaql will be empty on subsequent invocations
-        for resource, query, mode in accounts_gaql + [
-                g for g in constants_gaql
-        ]:
-            logging.info('...pulling resource %s...', resource)
-            # NOTE: These directories were previously sharded on login account ID.
-            #
-            # Since BQ load only supports a single wildcard, we can't use directory
-            # sharding on the MCC here. Login accounts are run sequentially. But if
-            # this is ever changed, there is a possibility that two login accounts
-            # could write to the same child account, causing a race condition.
-            output_dir = ads_path / 'all' / resource
-            output_dir.mkdir(parents=True, exist_ok=True)
-            gaql.run_query(
-                query=query,
-                ads_client=ads_client,
-                customer_id=customer_id,
-                output_dir=str(output_dir),
-                query_mode=mode,
-                use_simple_filename=True,
-                use_test_accounts=gaql.USE_TEST_ACCOUNTS.value,
-            )
-    logging.info('Done loading Ads data.')
+    login_customer_id, customer_id = next(
+        iter(_parse_login_customer_ids(_CUSTOMER_IDS.value))
+    )
+    ads_client.login_customer_id = login_customer_id
+    for resource, query, mode in _ALL_GAQL:
+      gaql.run_query(
+          query=query,
+          ads_client=ads_client,
+          customer_id=customer_id,
+          validate_only=True,
+          use_test_accounts=gaql.USE_TEST_ACCOUNTS.value,
+      )
+    return
 
-    # TODO: break out Merchant Center logic into its own file
-    logging.info('Loading Merchant Center data...')
+  acit_output_dir = _OUTPUT_DIR.value
 
-    # Before we can do anything, we need to know what type of accounts we're
-    # dealing with.
+  # Clear path
+  acit_output_dir.rmtree(missing_ok=True)
+  acit_output_dir.mkdir(parents=True)
 
-    input_ids = set(_MERCHANT_CENTER_IDS.value)
+  ads_path = acit_output_dir / _ACIT_ADS_OUTPUT_DIR
+  mc_path = acit_output_dir / _ACIT_MC_OUTPUT_DIR
 
-    # Phase 1 migration: the `accounts` resource is now ingested from the Merchant
-    # API (stable v1) instead of the Content API. This writes the flat, native-v1
-    # per-account files and returns the account topology (advanced/MCA vs
-    # standalone, plus the sub-account -> parent mapping) that drives the per-
-    # account Merchant API pulls below.
-    aggregator_ids, standalone_ids, leaf_to_parent = (
-        merchant_accounts.download_accounts(creds,
-                                            input_ids,
-                                            mc_path,
-                                            max_workers=_MC_MAX_WORKERS.value))
-    # All leaf (sub-) accounts we will actually process for product-level data.
-    leaf_ids: Set[str] = set(leaf_to_parent)
+  # Make sure paths exist
+  ads_path.mkdir()
+  mc_path.mkdir()
 
-    product_account_ids = leaf_ids | (standalone_ids & input_ids)
+  # Download ads data
+  logging.info(
+      'Ads YAML: %s',
+      os.getenv('GOOGLE_ADS_CONFIGURATION_FILE_PATH', 'Not set'),
+  )
+  logging.info('Loading Ads data...')
+  # Only load constants once
+  constants_gaql = iter(
+      [query for query in _ALL_GAQL if query[2] == gaql.QueryMode.SINGLE]
+  )
+  accounts_gaql = [
+      query for query in _ALL_GAQL if query[2] != gaql.QueryMode.SINGLE
+  ]
+  for login_customer_id, customer_id in _parse_login_customer_ids(
+      _CUSTOMER_IDS.value
+  ):
+    logging.info('Processing Customer ID %s', customer_id)
+    ads_client = client.GoogleAdsClient(
+        credentials=creds,
+        developer_token=developer_token,
+        version=ADS_API_VERSION,
+    )
+    ads_client.login_customer_id = login_customer_id
+    # constants_gaql will be empty on subsequent invocations
+    for resource, query, mode in accounts_gaql + [g for g in constants_gaql]:
+      logging.info('...pulling resource %s...', resource)
+      # NOTE: These directories were previously sharded on login account ID.
+      #
+      # Since BQ load only supports a single wildcard, we can't use directory
+      # sharding on the MCC here. Login accounts are run sequentially. But if
+      # this is ever changed, there is a possibility that two login accounts
+      # could write to the same child account, causing a race condition.
+      output_dir = ads_path / 'all' / resource
+      output_dir.mkdir(parents=True, exist_ok=True)
+      gaql.run_query(
+          query=query,
+          ads_client=ads_client,
+          customer_id=customer_id,
+          output_dir=str(output_dir),
+          query_mode=mode,
+          use_simple_filename=True,
+          use_test_accounts=gaql.USE_TEST_ACCOUNTS.value,
+      )
+  logging.info('Done loading Ads data.')
 
-    # Phase 2 migration: products are ingested from the Merchant API (stable v1)
-    # instead of the Content API. The v1 `Product` already carries its status, so
-    # there is no separate `productstatuses` pull. This writes the native-v1 per-
-    # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
-    # unchanged); the Beam stage splits out status and derives the channel.
-    merchant_products.download_products(creds,
-                                        product_account_ids,
-                                        mc_path,
-                                        max_workers=_MC_MAX_WORKERS.value)
+  # TODO: break out Merchant Center logic into its own file
+  logging.info('Loading Merchant Center data...')
 
-    # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
-    # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
-    # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
-    # we list per (sub)account directly (same account set as products).
-    # Admin-gated,matching the old `liasettings` pull.
+  # Before we can do anything, we need to know what type of accounts we're
+  # dealing with.
 
-    if _ADMIN_RIGHTS.value:
-        merchant_lia.download_omnichannel_settings(
-            creds,
-            product_account_ids,
-            mc_path,
-            max_workers=_MC_MAX_WORKERS.value)
+  input_ids = set(_MERCHANT_CENTER_IDS.value)
 
-    # Phase 4 migration: shipping settings come from the Merchant API (stable v1)
-    # `ShippingSettings` instead of the Content API `shippingsettings`. v1 has no
-    # MCA roll-down and the aggregator itself is not a valid target, so we fetch
-    # per (sub)account directly (same account set as products). Admin-gated,
-    # matching the old `shippingsettings` pull. This was the last Content API
-    # resource.
-    if _ADMIN_RIGHTS.value:
-        merchant_shipping.download_shipping_settings(
-            creds,
-            product_account_ids,
-            mc_path,
-            max_workers=_MC_MAX_WORKERS.value)
+  # Phase 1 migration: the `accounts` resource is now ingested from the Merchant
+  # API (stable v1) instead of the Content API. This writes the flat, native-v1
+  # per-account files and returns the account topology (advanced/MCA vs
+  # standalone, plus the sub-account -> parent mapping) that drives the per-
+  # account Merchant API pulls below.
+  aggregator_ids, standalone_ids, leaf_to_parent = (
+      merchant_accounts.download_accounts(
+          creds, input_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
+  )
+  # All leaf (sub-) accounts we will actually process for product-level data.
+  leaf_ids: Set[str] = set(leaf_to_parent)
 
-    unprocessed = input_ids - (leaf_ids | standalone_ids | aggregator_ids)
-    if unprocessed:
-        logging.warn(
-            'This credential does not have direct access to the following '
-            'input account(s): %s. Some data may be missing. ',
-            ','.join(unprocessed),
-        )
-    logging.info('Done loading Merchant Center data.')
+  product_account_ids = leaf_ids | (standalone_ids & input_ids)
+
+  # Phase 2 migration: products are ingested from the Merchant API (stable v1)
+  # instead of the Content API. The v1 `Product` already carries its status, so
+  # there is no separate `productstatuses` pull. This writes the native-v1 per-
+  # account files at merchant_center/<id>/products/rows.jsonlines (BQ glob
+  # unchanged); the Beam stage splits out status and derives the channel.
+  merchant_products.download_products(
+      creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
+
+  # Phase 3 migration: LIA / omnichannel settings come from the Merchant API
+  # (stable v1) `OmnichannelSettings` instead of the Content API `liasettings`.
+  # v1 has no MCA roll-down and the aggregator itself is not a valid parent, so
+  # we list per (sub)account directly (same account set as products).
+  # Admin-gated,matching the old `liasettings` pull.
+
+  if _ADMIN_RIGHTS.value:
+    merchant_lia.download_omnichannel_settings(
+        creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
+
+  # Phase 4 migration: shipping settings come from the Merchant API (stable v1)
+  # `ShippingSettings` instead of the Content API `shippingsettings`. v1 has no
+  # MCA roll-down and the aggregator itself is not a valid target, so we fetch
+  # per (sub)account directly (same account set as products). Admin-gated,
+  # matching the old `shippingsettings` pull. This was the last Content API
+  # resource.
+  if _ADMIN_RIGHTS.value:
+    merchant_shipping.download_shipping_settings(
+        creds, product_account_ids, mc_path, max_workers=_MC_MAX_WORKERS.value)
+
+  unprocessed = input_ids - (leaf_ids | standalone_ids | aggregator_ids)
+  if unprocessed:
+    logging.warn(
+        'This credential does not have direct access to the following '
+        'input account(s): %s. Some data may be missing. ',
+        ','.join(unprocessed),
+    )
+  logging.info('Done loading Merchant Center data.')
 
 
 if __name__ == '__main__':
-    app.run(main)
+  app.run(main)
