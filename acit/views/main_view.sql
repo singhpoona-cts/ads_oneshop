@@ -23,7 +23,7 @@ WITH
   SELECT
     P.account_id,
     P.offer_id AS full_id,
-    P.product.channel,
+    P.channel,
     P.product.content_language,
     P.product.feed_label,
     P.product.offer_id,

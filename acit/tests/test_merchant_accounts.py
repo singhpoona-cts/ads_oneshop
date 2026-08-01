@@ -21,22 +21,6 @@ from google.shopping import merchant_accounts_v1 as ma
 class MerchantAccountsTest(absltest.TestCase):
   """Tests for Merchant API v1 accounts ingestion helper functions."""
 
-  def test_to_dict_renders_enums_as_strings(self):
-    """Native v1 shape must use enum *names*, not integer, for BQ STRING."""
-    bi = ma.BusinessIdentity(promotions_consent=(
-        ma.BusinessIdentity.PromotionsConsent.PROMOTIONS_CONSENT_GIVEN))
-    d = merchant_accounts._to_dict(bi)  # pylint: disable=protected-access
-    self.assertEqual(d['promotions_consent'], 'PROMOTIONS_CONSENT_GIVEN')
-
-  def test_to_dict_uses_snake_case_keys(self):
-    account = ma.Account(account_id=123, account_name='Test')
-    d = merchant_accounts._to_dict(account)  # pylint: disable=protected-access
-    self.assertEqual(d['account_name'], 'Test')
-
-  def test_to_dict_none(self):
-    self.assertIsNone(
-        merchant_accounts._to_dict(None))  # pylint: disable=protected-access
-
   def test_service_type_aggregation(self):
     svc = ma.AccountService(account_aggregation=ma.AccountAggregation())
     self.assertEqual(
@@ -56,6 +40,35 @@ class MerchantAccountsTest(absltest.TestCase):
         merchant_accounts._service_type(  # pylint: disable=protected-access
             ma.AccountService()),
         '')
+
+  def test_serialize_record_converts_to_dict_correctly(self):
+    """Verifies that _serialize_record correctly transforms AccountRecord."""
+    record = merchant_accounts.AccountRecord(
+        account_id='123',
+        account_name='Test Name',
+        adult_content=False,
+        test_account=True,
+        time_zone=None,
+        language_code='en',
+        is_advanced=False,
+        parent_account='456',
+        homepage=ma.Homepage(uri='https://example.com', claimed=True),
+        business_info=None,
+        business_identity=None,
+        automatic_improvements=None,
+        users=[],
+        account_relationships=[],
+        account_services=[
+            ma.AccountService(account_aggregation=ma.AccountAggregation())
+        ],
+    )
+    serialized = merchant_accounts._serialize_record(record)  # pylint: disable=protected-access
+    self.assertEqual(serialized['account_id'], '123')
+    self.assertEqual(serialized['account_name'], 'Test Name')
+    self.assertEqual(serialized['time_zone'], None)
+    self.assertEqual(serialized['homepage']['uri'], 'https://example.com')
+    self.assertEqual(serialized['homepage']['claimed'], True)
+    self.assertEqual(serialized['account_services'][0]['service_type'], 'ACCOUNT_AGGREGATION')
 
 
 if __name__ == '__main__':

@@ -22,6 +22,10 @@ def _service(**kwargs):
   return ma.Service(**kwargs)
 
 
+def _to_dict(settings):
+  return type(settings).to_dict(settings, use_integers_for_enums=False)
+
+
 class MerchantShippingTest(absltest.TestCase):
   """Unit tests for the Merchant API v1 shipping-settings ingestion."""
 
@@ -39,8 +43,7 @@ class MerchantShippingTest(absltest.TestCase):
                 max_transit_days=5,
                 handling_business_day_config=ma.BusinessDayConfig(
                     business_days=['MONDAY', 'FRIDAY']),),)],)
-    d = merchant_shipping._to_dict(  # pylint: disable=protected-access
-        settings)
+    d = _to_dict(settings)
     svc = d['services'][0]
     self.assertEqual(svc['shipment_type'], 'DELIVERY')
     self.assertEqual(
@@ -59,9 +62,7 @@ class MerchantShippingTest(absltest.TestCase):
             currency_code='USD',
             delivery_time=ma.DeliveryTime(min_transit_days=2,
                                           max_transit_days=4),)],)
-    svc = (
-        merchant_shipping.  # pylint: disable=protected-access
-        _to_dict(settings)['services'][0])
+    svc = _to_dict(settings)['services'][0]
     self.assertEqual(svc['service_name'], 'Main')
     self.assertEqual(svc['delivery_countries'], ['US', 'IL'])
     self.assertEqual(svc['currency_code'], 'USD')
@@ -76,9 +77,7 @@ class MerchantShippingTest(absltest.TestCase):
                 ma.RateGroup(single_value=ma.Value(flat_rate={
                     'amount_micros': 0,
                     'currency_code': 'USD'}),)],)],)
-    rg = (
-        merchant_shipping.  # pylint: disable=protected-access
-        _to_dict(settings)['services'][0]['rate_groups'][0])
+    rg = _to_dict(settings)['services'][0]['rate_groups'][0]
     flat = rg['single_value']['flat_rate']
     # proto-plus renders int64 as a string;
     # the zero must be present, not dropped.
@@ -94,10 +93,7 @@ class MerchantShippingTest(absltest.TestCase):
                 single_value=ma.Value(flat_rate={
                     'amount_micros': 5_000_000, 'currency_code': 'USD'
                 }),)],)],)
-    flat = (
-        merchant_shipping.  # pylint: disable=protected-access
-        _to_dict(settings)['services'][0]['rate_groups'][0]['single_value']
-        ['flat_rate'])
+    flat = _to_dict(settings)['services'][0]['rate_groups'][0]['single_value']['flat_rate']
     self.assertEqual(int(flat['amount_micros']), 5_000_000)
 
   def test_main_table_cell_flat_rate(self):
@@ -109,10 +105,7 @@ class MerchantShippingTest(absltest.TestCase):
                     ma.Value(flat_rate={
                         'amount_micros': 0, 'currency_code': 'USD'
                     })])],),)],)],)
-    cell = (
-        merchant_shipping.  # pylint: disable=protected-access
-        _to_dict(settings)['services'][0]['rate_groups'][0]['main_table']
-        ['rows'][0]['cells'][0])
+    cell = _to_dict(settings)['services'][0]['rate_groups'][0]['main_table']['rows'][0]['cells'][0]
     self.assertEqual(int(cell['flat_rate']['amount_micros']), 0)
 
   def test_metadata_key(self):

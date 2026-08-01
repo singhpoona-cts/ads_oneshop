@@ -368,7 +368,7 @@ def campaign_matches_product_status(
   campaign_label = campaign['feed_label'].lower()
   if campaign_label and campaign_label != product['feed_label'].lower():
     return False
-  if not campaign['enable_local'] and product['channel'] == 'local':
+  if not campaign['enable_local'] and product_status['channel'] == 'local':
     return False
   for dimension in campaign['inventory_filter_dimensions']:
     if not dimension_matches_product(product, dimension, category_names_by_id):

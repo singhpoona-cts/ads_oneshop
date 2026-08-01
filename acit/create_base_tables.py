@@ -294,15 +294,16 @@ def main(argv):
           `merchant_center/*/products/*.jsonlines`.
 
       Returns:
-          A dict with `accountId`, `offerId`, `product`, and
+          A dict with `accountId`, `offerId`, `channel`, `product`, and
           `status` keys, ready to be joined with Ads targeting data.
       """
       account_id = p[resource_downloader.METADATA_KEY]['accountId']
       status = p.pop('product_status', None) or {}
-      p['channel'] = 'local' if p.get('legacy_local') else 'online'
+      channel = 'local' if p.get('legacy_local') else 'online'
       return {
           'accountId': account_id,
           'offerId': p.get('offer_id'),
+          'channel': channel,
           'product': p,
           'status': status,
       }

@@ -37,22 +37,15 @@ layout keeps the existing BigQuery glob
 """
 
 from concurrent import futures
+from dataclasses import dataclass
 import json
-import time
 from typing import Any, Dict
 
 from absl import logging
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
-
-# The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
-_TRANSIENT = (
-    gax_exceptions.InternalServerError,
-    gax_exceptions.ServiceUnavailable,
-    gax_exceptions.DeadlineExceeded,
-    gax_exceptions.TooManyRequests,
-)
 
 # AccountService.service_type oneof members (each is an
 # empty message in the API); we flatten the set oneof to a STRING
@@ -66,24 +59,25 @@ _SERVICE_TYPE_FIELDS = (
     'comparison_shopping',
 )
 
-_MAX_WORKERS = 8
 
-
-def _retry(fn, *, what, attempts=6):
-  """Calls `fn` with exponential backoff on transient server errors."""
-  delay = 1.0
-  for i in range(1, attempts + 1):
-    try:
-      return fn()
-    except _TRANSIENT as e:
-      if i == attempts:
-        raise
-      logging.warning(
-          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-          type(e).__name__, what, i, attempts, delay,
-      )
-      time.sleep(delay)
-      delay = min(delay * 2, 16.0)
+@dataclass
+class AccountRecord:
+  """Strongly-typed wrapper representing an aggregated Merchant account."""
+  account_id: str
+  account_name: str | None
+  adult_content: bool | None
+  test_account: bool | None
+  time_zone: Any
+  language_code: str | None
+  is_advanced: bool
+  parent_account: str | None
+  homepage: ma.Homepage | None
+  business_info: ma.BusinessInfo | None
+  business_identity: ma.BusinessIdentity | None
+  automatic_improvements: ma.AutomaticImprovements | None
+  users: list[ma.User]
+  account_relationships: list[ma.AccountRelationship]
+  account_services: list[ma.AccountService]
 
 
 def _to_dict(msg) -> Any:
@@ -100,7 +94,52 @@ def _to_dict(msg) -> Any:
 
   if msg is None:
     return None
-  return type(msg).to_dict(msg, use_integers_for_enums=False)
+  # Extract the underlying native protobuf if it's a proto-plus wrapper
+  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
+  return json_format.MessageToDict(
+      pb_msg,
+      preserving_proto_field_name=True,
+      use_integers_for_enums=False,
+  )
+
+
+def _serialize_record(record: AccountRecord) -> Dict[str, Any]:
+  """Serializes a strongly-typed AccountRecord into the exact BigQuery schema dict."""
+  homepage_dict = _to_dict(record.homepage) if record.homepage else None
+  business_info_dict = _to_dict(record.business_info) if record.business_info else None
+  business_identity_dict = _to_dict(record.business_identity) if record.business_identity else None
+  automatic_improvements_dict = _to_dict(record.automatic_improvements) if record.automatic_improvements else None
+  time_zone_dict = _to_dict(record.time_zone) if record.time_zone else None
+
+  users_dicts = [_to_dict(u) for u in record.users]
+  relationships_dicts = [_to_dict(r) for r in record.account_relationships]
+
+  services_dicts = []
+  for svc in record.account_services:
+    d = _to_dict(svc)
+    # Drop the empty oneof messages; expose the set one as `service_type`.
+    for k in _SERVICE_TYPE_FIELDS:
+      d.pop(k, None)
+    d['service_type'] = _service_type(svc)
+    services_dicts.append(d)
+
+  return {
+      'account_id': record.account_id,
+      'account_name': record.account_name,
+      'adult_content': record.adult_content,
+      'test_account': record.test_account,
+      'time_zone': time_zone_dict,
+      'language_code': record.language_code,
+      'is_advanced': record.is_advanced,
+      'parent_account': record.parent_account,
+      'homepage': homepage_dict,
+      'business_info': business_info_dict,
+      'business_identity': business_identity_dict,
+      'automatic_improvements': automatic_improvements_dict,
+      'users': users_dicts,
+      'account_relationships': relationships_dicts,
+      'account_services': services_dicts,
+  }
 
 
 class _Clients:
@@ -130,12 +169,12 @@ def _get_or_none(fn, *, what):
     what: A human-readable label string for logging in case of errors.
 
   Returns:
-    A dictionary representation of the fetched object, or None if the request
+    A protobuf message, or None if the request
     results in NOT_FOUND, PERMISSION_DENIED, or FAILED_PRECONDITION.
   """
 
   try:
-    return _to_dict(_retry(fn, what=what))
+    return fn()
   except gax_exceptions.NotFound:
     logging.info('%s: NOT_FOUND', what)
     return None
@@ -158,104 +197,69 @@ def _service_type(service_msg) -> str:
     an empty string if none is set.
   """
 
+  if service_msg is None:
+    return ''
   which = type(service_msg).pb(service_msg).WhichOneof('service_type')
   return which.upper() if which else ''
 
 
-def _build_record(clients: _Clients, account_id: str, core: Dict[str, Any],
-                  parent: str, is_advanced: bool) -> Dict[str, Any]:
+def _build_record(clients: _Clients, account_id: str, core: ma.Account,
+                  parent: str, is_advanced: bool) -> AccountRecord:
   """Fans out across v1 sub-resources to build one flat native-shape record.
 
   Args:
     clients: The `_Clients` object containing initialized API
     client connections.
     account_id: The Merchant Center account ID as a string.
-    core: A dictionary containing the core Account information.
+    core: An Account protobuf message containing core Account information.
     parent: The parent account ID string, or an empty string if top-level.
     is_advanced: Whether the account is an advanced/MCA account.
 
   Returns:
-    A dictionary representing the aggregated native v1 account record,
-    including core fields, parent/child relationship metadata, and attached
-    sub-resources (homepage, business info, users, etc.).
+    An AccountRecord dataclass representing the aggregated native v1 account.
   """
 
   name = clients.accounts.account_path(account_id)  # "accounts/{id}"
 
-  services_msgs = _retry(
-      lambda: list(
-          clients.services.list_account_services(
-              ma.ListAccountServicesRequest(parent=name))),
-      what=f'list_account_services:{account_id}',
-  )
-  services = []
-  for svc in services_msgs:
-    d = _to_dict(svc)
-    # Drop the empty oneof messages; expose the set one as `service_type`.
-    for k in _SERVICE_TYPE_FIELDS:
-      d.pop(k, None)
-    d['service_type'] = _service_type(svc)
-    services.append(d)
+  services_msgs = list(
+      clients.services.list_account_services(
+          ma.ListAccountServicesRequest(parent=name)))
 
-  return {
-      # --- core Account (free: already fetched during discovery) ---
-      'account_id':
-      account_id,
-      'account_name':
-      core.get('account_name'),
-      'adult_content':
-      core.get('adult_content'),
-      'test_account':
-      core.get('test_account'),
-      'time_zone':
-      core.get('time_zone'),
-      'language_code':
-      core.get('language_code'),
-      # relationship (replaces the legacy {settings, children[]} rollup)
-      'is_advanced':
-      is_advanced,
-      'parent_account':
-      parent,
-      # sub-resources (each was a field on the old monolithic Account)
-      'homepage':
-      _get_or_none(
+  return AccountRecord(
+      account_id=account_id,
+      account_name=core.account_name,
+      adult_content=core.adult_content,
+      test_account=core.test_account,
+      time_zone=core.time_zone,
+      language_code=core.language_code,
+      is_advanced=is_advanced,
+      parent_account=parent,
+      homepage=_get_or_none(
           lambda: clients.homepage.get_homepage(
               name=clients.homepage.homepage_path(account_id)),
           what=f'homepage:{account_id}'),
-      'business_info':
-      _get_or_none(
+      business_info=_get_or_none(
           lambda: clients.business_info.get_business_info(
               name=clients.business_info.business_info_path(account_id)),
           what=f'business_info:{account_id}'),
-      'business_identity':
-      _get_or_none(
+      business_identity=_get_or_none(
           lambda: clients.business_identity.get_business_identity(
               name=clients.business_identity.business_identity_path(
                   account_id)),
           what=f'business_identity:{account_id}'),
-      'automatic_improvements':
-      _get_or_none(
+      automatic_improvements=_get_or_none(
           lambda: clients.automatic_improvements.get_automatic_improvements(
               name=clients.automatic_improvements.
               automatic_improvements_path(account_id)),
           what=f'automatic_improvements:{account_id}'),
-      'users': [
-          _to_dict(u) for u in _retry(
-              lambda: list(
-                  clients.users.list_users(
-                      ma.ListUsersRequest(parent=name))),
-              what=f'list_users:{account_id}')
-      ],
-      'account_relationships': [
-          _to_dict(r) for r in _retry(
-              lambda: list(
-                  clients.relationships.list_account_relationships(
-                      ma.ListAccountRelationshipsRequest(parent=name))),
-              what=f'list_account_relationships:{account_id}')
-      ],
-      'account_services':
-      services,
-  }
+      users=list(
+          clients.users.list_users(
+              ma.ListUsersRequest(parent=name))),
+      account_relationships=list(
+          clients.relationships.list_account_relationships(
+              ma.ListAccountRelationshipsRequest(parent=name))),
+      account_services=services_msgs,
+  )
 
 
 def discover_topology(clients: _Clients, input_ids):
@@ -275,7 +279,7 @@ def discover_topology(clients: _Clients, input_ids):
       - aggregator_ids: set of advanced (MCA) account IDs from the input.
       - standalone_ids: set of standalone (non-advanced) input account IDs.
       - leaf_to_parent: {child_id: aggregator_id} for every sub-account.
-      - cores: {account_id: core Account dict} (sub-account cores come free
+      - cores: {account_id: core Account message} (sub-account cores come free
         from the listSubaccounts response; only top-level/advanced accounts
         cost a get).
   """
@@ -285,13 +289,10 @@ def discover_topology(clients: _Clients, input_ids):
   for acc_id in input_ids:
     provider = clients.accounts.account_path(acc_id)
     try:
-      subs = _retry(
-          lambda p=provider: list(
-              clients.accounts.list_sub_accounts(
-                  ma.ListSubAccountsRequest(provider=p)
-              )
-          ),
-          what=f'list_sub_accounts:{acc_id}',
+      subs = list(
+          clients.accounts.list_sub_accounts(
+              ma.ListSubAccountsRequest(provider=provider)
+          )
       )
     except gax_exceptions.PermissionDenied as e:
       logging.warning(
@@ -305,34 +306,22 @@ def discover_topology(clients: _Clients, input_ids):
           len(subs),
       )
       aggregator_ids.add(acc_id)
-      cores[acc_id] = _to_dict(
-          _retry(
-              lambda p=provider: clients.accounts.get_account(name=p),
-              what=f'get_account:{acc_id}',
-          )
-      )
+      cores[acc_id] = clients.accounts.get_account(name=provider)
       for s in subs:
         sid = str(s.account_id)
-        cores[sid] = _to_dict(
-            s
-        )  # core from list response -- 0 extra calls
+        cores[sid] = s  # core from list response -- 0 extra calls
         leaf_to_parent[sid] = acc_id
     else:
       logging.info('Account %s is standalone', acc_id)
       standalone_ids.add(acc_id)
-      cores[acc_id] = _to_dict(
-          _retry(
-              lambda p=provider: clients.accounts.get_account(name=p),
-              what=f'get_account:{acc_id}',
-          )
-      )
+      cores[acc_id] = clients.accounts.get_account(name=provider)
   return aggregator_ids, standalone_ids, leaf_to_parent, cores
 
 
 def download_accounts(credentials,
                       input_ids,
                       mc_path,
-                      max_workers=_MAX_WORKERS):
+                      max_workers=None):
   """Downloads accounts from Merchant API v1 and writes flat files.
 
   Args:
@@ -357,11 +346,12 @@ def download_accounts(credentials,
     is_advanced = account_id in aggregator_ids
     record = _build_record(clients, account_id, cores[account_id], parent,
                            is_advanced)
+    serialized = _serialize_record(record)
     output_file = (epath.Path(mc_path) / account_id / 'accounts' /
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w') as f:
-      f.write(json.dumps(record) + '\n')
+      f.write(json.dumps(serialized) + '\n')
     return account_id
 
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:

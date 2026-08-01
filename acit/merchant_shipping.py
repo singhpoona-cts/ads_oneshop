@@ -38,11 +38,12 @@ MCA<->child relationship from the (already migrated) `accounts` table.
 
 from concurrent import futures
 import json
-import time
+from typing import Any
 
 from absl import logging
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # Key stamped onto every row so downstream code knows the source account.
@@ -50,37 +51,28 @@ from google.shopping import merchant_accounts_v1 as ma
 # (account_id is also written at top level.)
 METADATA_KEY = 'downloaderMetadata'
 
-# The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
-_TRANSIENT = (
-    gax_exceptions.InternalServerError,
-    gax_exceptions.ServiceUnavailable,
-    gax_exceptions.DeadlineExceeded,
-    gax_exceptions.TooManyRequests,
-)
 
-_MAX_WORKERS = 8
+def _to_dict(msg) -> Any:
+  """Proto -> dict in native v1 shape.
 
+  Args:
+    msg: The protobuf message to convert into a dictionary.
 
-def _retry(fn, *, what, attempts=6):
-  """Calls `fn` with exponential backoff on transient server errors."""
-  delay = 1.0
-  for i in range(1, attempts + 1):
-    try:
-      return fn()
-    except _TRANSIENT as e:
-      if i == attempts:
-        raise
-      logging.warning(
-          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-          type(e).__name__, what, i, attempts, delay,
-      )
-      time.sleep(delay)
-      delay = min(delay * 2, 16.0)
+  Returns:
+    A dictionary representation of the proto message in native v1 shape with
+    snake_case keys and string enum names, or None if the input message is
+    None.
+  """
 
-
-def _to_dict(msg):
-  """Proto -> dict in native v1 shape: snake_case keys, enum *names* (not ints)."""
-  return type(msg).to_dict(msg, use_integers_for_enums=False)
+  if msg is None:
+    return None
+  # Extract the underlying native protobuf if it's a proto-plus wrapper
+  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
+  return json_format.MessageToDict(
+      pb_msg,
+      preserving_proto_field_name=True,
+      use_integers_for_enums=False,
+  )
 
 
 def _get_account_shipping(client, account_id):
@@ -91,17 +83,14 @@ def _get_account_shipping(client, account_id):
     account_id: The string or integer ID of the account to query.
 
   Returns:
-    A ShippingSettings dict with snake_case keys and enum names, or None if
+    A ShippingSettings protobuf message, or None if
     the account has no shipping settings (NotFound) or is not a valid target
     for this method (e.g., an aggregator or MCA resulting in PermissionDenied).
   """
   name = f'accounts/{account_id}/shippingSettings'
   try:
-    settings = _retry(
-        lambda: client.get_shipping_settings(
-            request=ma.GetShippingSettingsRequest(name=name)),
-        what=f'get_shipping_settings:{account_id}',
-    )
+    return client.get_shipping_settings(
+        request=ma.GetShippingSettingsRequest(name=name))
   except gax_exceptions.PermissionDenied:
     # Aggregators/MCAs are not valid targets -- "only subaccounts and standalone
     # accounts". The old Content API aggregator `get` returned 404 anyway.
@@ -113,11 +102,10 @@ def _get_account_shipping(client, account_id):
     # No shipping settings configured --
     # mirrors the old Content API 404 swallow.
     return None
-  return _to_dict(settings)
 
 
 def download_shipping_settings(
-        credentials, account_ids, mc_path, max_workers=_MAX_WORKERS):
+        credentials, account_ids, mc_path, max_workers=None):
   """Downloads shipping settings from Merchant API v1, one file per account.
 
   Args:
@@ -139,12 +127,13 @@ def download_shipping_settings(
     # JOINs default such accounts to "no account-level shipping".
     if settings is None:
       return account_id, 0
-    services = settings.get('services', []) or []
+    settings_dict = _to_dict(settings)
+    services = settings_dict.get('services', []) or []
     record = {
         'account_id': int(account_id),
         'services': services,
-        'warehouses': settings.get('warehouses', []) or [],
-        'etag': settings.get('etag'),
+        'warehouses': settings_dict.get('warehouses', []) or [],
+        'etag': settings_dict.get('etag'),
         METADATA_KEY: {'accountId': account_id},
     }
     output_file = (

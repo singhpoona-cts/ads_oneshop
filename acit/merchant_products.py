@@ -31,49 +31,41 @@ out, derives the `channel` dimension, and joins Ads targeting.
 
 from concurrent import futures
 import json
-import time
+from typing import Any
 
 from absl import logging
 from etils import epath
-from google.api_core import exceptions as gax_exceptions
+from google.protobuf import json_format
 from google.shopping import merchant_products_v1 as mp
 
 # Key stamped onto every row so the Beam stage knows the source account. Mirrors
 # resource_downloader.METADATA_KEY so downstream code is unchanged.
 METADATA_KEY = 'downloaderMetadata'
 
-# The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
-_TRANSIENT = (
-    gax_exceptions.InternalServerError,
-    gax_exceptions.ServiceUnavailable,
-    gax_exceptions.DeadlineExceeded,
-    gax_exceptions.TooManyRequests,
-)
-
 _PAGE_SIZE = 250
-_MAX_WORKERS = 8
 
 
-def _retry(fn, *, what, attempts=6):
-  """Calls `fn` with exponential backoff on transient server errors."""
-  delay = 1.0
-  for i in range(1, attempts + 1):
-    try:
-      return fn()
-    except _TRANSIENT as e:
-      if i == attempts:
-        raise
-      logging.warning(
-          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-          type(e).__name__, what, i, attempts, delay,
-      )
-      time.sleep(delay)
-      delay = min(delay * 2, 16.0)
+def _to_dict(msg) -> Any:
+  """Proto -> dict in native v1 shape.
 
+  Args:
+    msg: The protobuf message to convert into a dictionary.
 
-def _to_dict(msg):
-  """Proto -> dict in native v1 shape: snake_case keys, enum *names*."""
-  return type(msg).to_dict(msg, use_integers_for_enums=False)
+  Returns:
+    A dictionary representation of the proto message in native v1 shape with
+    snake_case keys and string enum names, or None if the input message is
+    None.
+  """
+
+  if msg is None:
+    return None
+  # Extract the underlying native protobuf if it's a proto-plus wrapper
+  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
+  return json_format.MessageToDict(
+      pb_msg,
+      preserving_proto_field_name=True,
+      use_integers_for_enums=False,
+  )
 
 
 def _list_leaf_products(client, account_id):
@@ -97,30 +89,16 @@ def _list_leaf_products(client, account_id):
     Native-shape dicts representing individual v1 products.
   """
   parent = f'accounts/{account_id}'
-  pager = _retry(
-      lambda: client.list_products(request=mp.ListProductsRequest(
-          parent=parent, page_size=_PAGE_SIZE)),
-      what=f'list_products:{account_id}',
-  )
-  # The pager itself can raise transient errors while turning pages.
-  it = iter(pager)
-  while True:
-    try:
-      product = _retry(lambda: next(it, None),
-                       what=f'list_products_page:{account_id}')
-    except StopIteration:
-      break
-    if product is None:
-      break
-    d = _to_dict(product)
-    d[METADATA_KEY] = {'accountId': account_id}
-    yield d
+  pager = client.list_products(request=mp.ListProductsRequest(
+      parent=parent, page_size=_PAGE_SIZE))
+  for product in pager:
+    yield product
 
 
 def download_products(credentials,
                       account_ids,
                       mc_path,
-                      max_workers=_MAX_WORKERS):
+                      max_workers=None):
   """Downloads products from Merchant API v1 and writes per-account files.
 
   Args:
@@ -144,8 +122,10 @@ def download_products(credentials,
     # is a generator and must be consumed lazily to keep that guarantee.
     count = 0
     with output_file.open('w') as f:
-      for row in _list_leaf_products(client, account_id):
-        f.write(json.dumps(row) + '\n')
+      for product in _list_leaf_products(client, account_id):
+        d = _to_dict(product)
+        d[METADATA_KEY] = {'accountId': account_id}
+        f.write(json.dumps(d) + '\n')
         count += 1
     return account_id, count
 

@@ -36,11 +36,12 @@ MCA<->child relationship from the (already migrated) `accounts` table.
 
 from concurrent import futures
 import json
-import time
+from typing import Any
 
 from absl import logging
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # Key stamped onto every row so downstream code knows the source account.
@@ -48,38 +49,30 @@ from google.shopping import merchant_accounts_v1 as ma
 # (account_id is also written at top level.)
 METADATA_KEY = 'downloaderMetadata'
 
-# The Merchant API v1 backend returns sporadic 500 INTERNAL / 503 errors; retry.
-_TRANSIENT = (
-    gax_exceptions.InternalServerError,
-    gax_exceptions.ServiceUnavailable,
-    gax_exceptions.DeadlineExceeded,
-    gax_exceptions.TooManyRequests,
-)
-
 _PAGE_SIZE = 250
-_MAX_WORKERS = 8
 
 
-def _retry(fn, *, what, attempts=6):
-  """Calls `fn` with exponential backoff on transient server errors."""
-  delay = 1.0
-  for i in range(1, attempts + 1):
-    try:
-      return fn()
-    except _TRANSIENT as e:
-      if i == attempts:
-        raise
-      logging.warning(
-          'Transient %s on %s (attempt %d/%d); retrying in %.0fs',
-          type(e).__name__, what, i, attempts, delay,
-      )
-      time.sleep(delay)
-      delay = min(delay * 2, 16.0)
+def _to_dict(msg) -> Any:
+  """Proto -> dict in native v1 shape.
 
+  Args:
+    msg: The protobuf message to convert into a dictionary.
 
-def _to_dict(msg):
-  """Proto -> dict in native v1 shape: snake_case keys,enum *names* ."""
-  return type(msg).to_dict(msg, use_integers_for_enums=False)
+  Returns:
+    A dictionary representation of the proto message in native v1 shape with
+    snake_case keys and string enum names, or None if the input message is
+    None.
+  """
+
+  if msg is None:
+    return None
+  # Extract the underlying native protobuf if it's a proto-plus wrapper
+  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
+  return json_format.MessageToDict(
+      pb_msg,
+      preserving_proto_field_name=True,
+      use_integers_for_enums=False,
+  )
 
 
 def _list_account_omnichannel(client, account_id):
@@ -90,18 +83,15 @@ def _list_account_omnichannel(client, account_id):
     account_id: The string or integer ID of the account to query.
 
   Returns:
-    A (possibly empty) list of per-region OmnichannelSetting dicts, or None if
+    A (possibly empty) list of per-region OmnichannelSetting messages, or None if
     the account is not a valid parent for this method (e.g., an aggregator
     or MCA resulting in PermissionDenied).
   """
   parent = f'accounts/{account_id}'
   try:
-    pager = _retry(
-        lambda: client.list_omnichannel_settings(
-            request=ma.ListOmnichannelSettingsRequest(
-                parent=parent, page_size=_PAGE_SIZE)),
-        what=f'list_omnichannel_settings:{account_id}',
-    )
+    pager = client.list_omnichannel_settings(
+        request=ma.ListOmnichannelSettingsRequest(
+            parent=parent, page_size=_PAGE_SIZE))
   except gax_exceptions.PermissionDenied:
     # Aggregators/MCAs are not valid parents
     # "only subaccounts and standalone
@@ -113,25 +103,13 @@ def _list_account_omnichannel(client, account_id):
   except gax_exceptions.NotFound:
     return []
 
-  rows = []
-  it = iter(pager)
-  while True:
-    try:
-      setting = _retry(
-          lambda: next(it, None),
-          what=f'list_omnichannel_settings_page:{account_id}')
-    except StopIteration:
-      break
-    if setting is None:
-      break
-    rows.append(_to_dict(setting))
-  return rows
+  return list(pager)
 
 
 def download_omnichannel_settings(credentials,
                                   account_ids,
                                   mc_path,
-                                  max_workers=_MAX_WORKERS):
+                                  max_workers=None):
   """Downloads omnichannel/LIA settings from Merchant API v1.
 
   Writes output to one file per account.
@@ -150,14 +128,17 @@ def download_omnichannel_settings(credentials,
   account_ids = list(account_ids)
 
   def _process(account_id):
-    rows = _list_account_omnichannel(client, account_id)
+    settings = _list_account_omnichannel(client, account_id)
     # None (not accessible) or [] (no settings) -> write nothing;
     # LEFT JOINs default such accounts to "not implemented".
-    if not rows:
+    if not settings:
       return account_id, 0
+    serialized_rows = [
+        _to_dict(s) for s in settings
+    ]
     record = {
         'account_id': int(account_id),
-        'omnichannel_settings': rows,
+        'omnichannel_settings': serialized_rows,
         METADATA_KEY: {
             'accountId': account_id
         },
@@ -167,7 +148,7 @@ def download_omnichannel_settings(credentials,
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w') as f:
       f.write(json.dumps(record) + '\n')
-    return account_id, len(rows)
+    return account_id, len(settings)
 
   total = 0
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:

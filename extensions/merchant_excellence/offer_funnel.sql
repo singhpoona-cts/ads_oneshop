@@ -118,7 +118,7 @@ AS (
     ProductStatus AS (
       SELECT
         account_id AS merchant_id,
-        P.product.channel,
+        P.channel,
         offer_id AS product_id,
         P.status.item_level_issues,
         ARRAY(

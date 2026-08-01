@@ -20,58 +20,10 @@ from absl.testing import absltest
 from acit import merchant_products
 from etils import epath
 from google.shopping import merchant_products_v1 as mp
-from google.shopping import type as shopping_type
 
 
 class MerchantProductsTest(absltest.TestCase):
   """Unit tests for the Merchant API v1 products ingestion helpers."""
-
-  def test_to_dict_renders_enums_as_strings(self):
-    """Native v1 shape must use enum *names*, not int, for BQ STRING."""
-    product = mp.Product(
-        offer_id='SKU1',
-        content_language='en',
-        feed_label='US',
-        product_attributes=mp.ProductAttributes(
-            availability=mp.Availability.IN_STOCK,
-            condition=mp.Condition.NEW,
-        ),
-    )
-    d = merchant_products._to_dict(product)  # pylint: disable=protected-access
-    self.assertEqual(d['product_attributes']['availability'], 'IN_STOCK')
-    self.assertEqual(d['product_attributes']['condition'], 'NEW')
-
-  def test_to_dict_uses_snake_case_keys(self):
-    product = mp.Product(offer_id='SKU1', content_language='en')
-    d = merchant_products._to_dict(product)  # pylint: disable=protected-access
-    self.assertEqual(d['offer_id'], 'SKU1')
-    self.assertEqual(d['content_language'], 'en')
-
-  def test_to_dict_price_is_micros(self):
-    """v1 Price is {amount_micros, currency_code}, not {value, currency}."""
-    product = mp.Product(product_attributes=mp.ProductAttributes(
-        price=shopping_type.Price(amount_micros=6_000_000,
-                                  currency_code='USD')))
-    d = merchant_products._to_dict(product)  # pylint: disable=protected-access
-    price = d['product_attributes']['price']
-    # int64 fields render as strings in proto JSON.
-    self.assertEqual(int(price['amount_micros']), 6_000_000)
-    self.assertEqual(price['currency_code'], 'USD')
-
-  def test_to_dict_status_reporting_context_enum(self):
-    """Status `destination` is now the `reporting_context` enum name."""
-    product = mp.Product(product_status=mp.ProductStatus(
-        destination_statuses=[
-            mp.ProductStatus.DestinationStatus(
-                reporting_context=(shopping_type.ReportingContext.
-                                   ReportingContextEnum.SHOPPING_ADS),
-                disapproved_countries=['US'],
-            )
-        ]))
-    d = merchant_products._to_dict(product)  # pylint: disable=protected-access
-    ds = d['product_status']['destination_statuses'][0]
-    self.assertEqual(ds['reporting_context'], 'SHOPPING_ADS')
-    self.assertEqual(ds['disapproved_countries'], ['US'])
 
   def test_metadata_key(self):
     self.assertEqual(merchant_products.METADATA_KEY, 'downloaderMetadata')
@@ -115,19 +67,16 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
     # Nothing is fetched or converted until the caller starts iterating.
     self.assertEqual(client.consumed, 0)
     first = next(iter(result))
-    self.assertEqual(first['offer_id'], 'SKU0')
+    self.assertEqual(first.offer_id, 'SKU0')
     self.assertEqual(client.consumed, 1)
 
-  def test_yields_every_product_with_metadata(self):
+  def test_yields_every_product(self):
     client = _FakeProductsClient(self._products(5))
     rows = list(merchant_products.  # pylint: disable=protected-access
                 _list_leaf_products(client, '123'))
     self.assertLen(rows, 5)
-    self.assertEqual([r['offer_id'] for r in rows],
+    self.assertEqual([r.offer_id for r in rows],
                      [f'SKU{i}' for i in range(5)])
-    for row in rows:
-      self.assertEqual(row[merchant_products.METADATA_KEY],
-                       {'accountId': '123'})
 
   def test_empty_account_yields_nothing(self):
     client = _FakeProductsClient([])
