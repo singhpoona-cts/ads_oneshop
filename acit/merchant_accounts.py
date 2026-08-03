@@ -42,6 +42,7 @@ import json
 from typing import Any, Dict
 
 from absl import logging
+from acit.utils import to_dict as _to_dict
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
 from google.protobuf import json_format
@@ -78,29 +79,6 @@ class AccountRecord:
   users: list[ma.User]
   account_relationships: list[ma.AccountRelationship]
   account_services: list[ma.AccountService]
-
-
-def _to_dict(msg) -> Any:
-  """Proto -> dict in native v1 shape.
-
-  Args:
-    msg: The protobuf message to convert into a dictionary.
-
-  Returns:
-    A dictionary representation of the proto message in native v1 shape with
-    snake_case keys and string enum names, or None if the input message is
-    None.
-  """
-
-  if msg is None:
-    return None
-  # Extract the underlying native protobuf if it's a proto-plus wrapper
-  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
-  return json_format.MessageToDict(
-      pb_msg,
-      preserving_proto_field_name=True,
-      use_integers_for_enums=False,
-  )
 
 
 def _serialize_record(record: AccountRecord) -> Dict[str, Any]:
@@ -204,7 +182,7 @@ def _service_type(service_msg) -> str:
 
 
 def _build_record(clients: _Clients, account_id: str, core: ma.Account,
-                  parent: str, is_advanced: bool) -> AccountRecord:
+                  parent: str | None, is_advanced: bool) -> AccountRecord:
   """Fans out across v1 sub-resources to build one flat native-shape record.
 
   Args:

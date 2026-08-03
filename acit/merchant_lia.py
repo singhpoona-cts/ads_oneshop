@@ -36,12 +36,12 @@ MCA<->child relationship from the (already migrated) `accounts` table.
 
 from concurrent import futures
 import json
-from typing import Any
+from typing import Any, Iterable, List, Tuple
 
 from absl import logging
+from acit.utils import to_dict as _to_dict
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
-from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # Key stamped onto every row so downstream code knows the source account.
@@ -52,30 +52,7 @@ METADATA_KEY = 'downloaderMetadata'
 _PAGE_SIZE = 250
 
 
-def _to_dict(msg) -> Any:
-  """Proto -> dict in native v1 shape.
-
-  Args:
-    msg: The protobuf message to convert into a dictionary.
-
-  Returns:
-    A dictionary representation of the proto message in native v1 shape with
-    snake_case keys and string enum names, or None if the input message is
-    None.
-  """
-
-  if msg is None:
-    return None
-  # Extract the underlying native protobuf if it's a proto-plus wrapper
-  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
-  return json_format.MessageToDict(
-      pb_msg,
-      preserving_proto_field_name=True,
-      use_integers_for_enums=False,
-  )
-
-
-def _list_account_omnichannel(client, account_id):
+def _list_account_omnichannel(client: ma.OmnichannelSettingsServiceClient, account_id: str) -> List[ma.OmnichannelSetting] | None:
   """Lists v1 omnichannel settings for one account, as native-shape dicts.
 
   Args:
@@ -106,10 +83,10 @@ def _list_account_omnichannel(client, account_id):
   return list(pager)
 
 
-def download_omnichannel_settings(credentials,
-                                  account_ids,
-                                  mc_path,
-                                  max_workers=None):
+def download_omnichannel_settings(credentials: Any,
+                                  account_ids: Iterable[str],
+                                  mc_path: Any,
+                                  max_workers: int | None = None) -> None:
   """Downloads omnichannel/LIA settings from Merchant API v1.
 
   Writes output to one file per account.
@@ -125,9 +102,9 @@ def download_omnichannel_settings(credentials,
       Merchant API ingestion stages.
   """
   client = ma.OmnichannelSettingsServiceClient(credentials=credentials)
-  account_ids = list(account_ids)
+  account_ids_list = list(account_ids)
 
-  def _process(account_id):
+  def _process(account_id: str) -> Tuple[str, int]:
     settings = _list_account_omnichannel(client, account_id)
     # None (not accessible) or [] (no settings) -> write nothing;
     # LEFT JOINs default such accounts to "not implemented".

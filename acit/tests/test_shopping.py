@@ -1,4 +1,4 @@
-# Copyright 2024 Google LLC
+# Copyright 2023 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from absl.testing import absltest
 from absl.testing import parameterized
 
-from google.ads.googleads.v22.services.types import google_ads_service
-
 from acit import shopping
+from google.ads.googleads.v22.services.types import google_ads_service
 
 
 class ShoppingTest(parameterized.TestCase):
@@ -204,3 +204,8 @@ class ShoppingTest(parameterized.TestCase):
     _, actual = shopping.build_product_group_tree(None, criteria)
 
     self.assertEqual(expected, actual)
+
+
+if __name__ == '__main__':
+  absltest.main()
+

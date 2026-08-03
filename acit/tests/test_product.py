@@ -12,14 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from absl.testing import absltest
 from absl.testing import parameterized
 
 from acit import product as product_util
+from acit.api.v0.storage import schema_pb2
 
 _PRODUCT_CATEGORIES_BY_ID = {
     '1': 'Animals & Pet Supplies',
     '2': 'Other',
 }
+
+
+def _to_camel_case(snake_str):
+  components = snake_str.split('_')
+  return components[0] + ''.join(x.title() for x in components[1:])
+
+
+def _convert_dict_to_camel_case(d):
+  if isinstance(d, list):
+    return [_convert_dict_to_camel_case(x) for x in d]
+  if isinstance(d, dict):
+    new_dict = {}
+    for k, v in d.items():
+      camel_key = _to_camel_case(k)
+      # Standardize enum strings to uppercase so json_format.ParseDict maps them successfully
+      if camel_key in ('condition', 'availability', 'reportingContext') and isinstance(v, str):
+        v = v.upper()
+      new_dict[camel_key] = _convert_dict_to_camel_case(v)
+    return new_dict
+  return d
 
 
 class ProductTest(parameterized.TestCase):
@@ -308,8 +330,17 @@ class ProductTest(parameterized.TestCase):
   def test_specific_dimension_matches_product(self, product, dimension,
                                               expected):
     """Tests whether a single targeting dimension match a given product."""
+    from google.protobuf import json_format
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     self.assertEqual(
-        product_util.dimension_matches_product(product, dimension,
+        product_util.dimension_matches_product(msg, dimension,
                                                _PRODUCT_CATEGORIES_BY_ID),
         expected,
     )
@@ -383,8 +414,17 @@ class ProductTest(parameterized.TestCase):
       },
   )
   def test_product_targeted_by_tree(self, product, tree, expected):
+    from google.protobuf import json_format
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     self.assertEqual(
-        product_util.product_targeted_by_tree(product, tree,
+        product_util.product_targeted_by_tree(msg, tree,
                                               _PRODUCT_CATEGORIES_BY_ID),
         expected,
     )
@@ -514,8 +554,17 @@ class ProductTest(parameterized.TestCase):
   def test_product_targeted_by_unbalanced_tree(self, product, node,
                                                expected):
     """Tests whether a product matches targeting in an unbalanced tree."""
+    from google.protobuf import json_format
+    camel_product = _convert_dict_to_camel_case(product)
+    wide_row = {}
+    if 'productAttributes' in camel_product:
+      wide_row['product'] = camel_product
+    else:
+      wide_row = camel_product
+    msg = schema_pb2.WideProduct()
+    json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
     actual = product_util.product_targeted_by_tree(
-        product, node, _PRODUCT_CATEGORIES_BY_ID)
+        msg, node, _PRODUCT_CATEGORIES_BY_ID)
     self.assertEqual(expected, actual)
 
   def test_build_product_group_tree_empty_root(self):
@@ -660,19 +709,19 @@ class ProductTest(parameterized.TestCase):
     # Construct a real schema_pb2.WideProduct containing nested Protobufs
     wide = schema_pb2.WideProduct()
     wide.channel = 'online'
-    wide.product.product_attributes.availability = 'IN_STOCK' # Enum value (internally int 1)
-    wide.product.product_attributes.condition = 'NEW' # Enum value (internally int 1)
+    wide.product.product_attributes.availability = 1 # 'IN_STOCK' Enum value (internally int 1)
+    wide.product.product_attributes.condition = 1 # 'NEW' Enum value (internally int 1)
     wide.product.product_attributes.brand = 'TestBrand'
     
     # Verify set_product_in_stock matches "IN_STOCK" string against integer enum 1 correctly
-    product_util.set_product_in_stock(wide)
+    wide = product_util.set_product_in_stock(wide)
     self.assertTrue(wide.in_stock)
 
-    # Verify set_product_approved matches "SHOPPING_ADS" enum 6 correctly
+    # Verify set_product_approved matches "SHOPPING_ADS" enum 1 correctly
     status_msg = wide.status.destination_statuses.add()
-    status_msg.reporting_context = 'SHOPPING_ADS' # Enum value 6
+    status_msg.reporting_context = 1 # 'SHOPPING_ADS' Enum value 1
     status_msg.approved_countries.append('US')
-    product_util.set_product_approved(wide)
+    wide = product_util.set_product_approved(wide)
     self.assertEqual(list(wide.approved_countries), ['US'])
 
     # Verify dimension_matches_product matches condition enum correctly without raising AttributeError
@@ -684,4 +733,8 @@ class ProductTest(parameterized.TestCase):
     self.assertTrue(
         product_util.dimension_matches_product(wide, dimension, {})
     )
+
+if __name__ == '__main__':
+  absltest.main()
+
 

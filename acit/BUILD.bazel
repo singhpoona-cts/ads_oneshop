@@ -21,6 +21,14 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 package(default_visibility = ["//:__pkg__"])
 
 py_library(
+    name = "utils_lib",
+    srcs = ["utils.py"],
+    deps = [
+        "@acit_deps//protobuf",
+    ],
+)
+
+py_library(
     name = "resource_downloader_lib",
     srcs = ["resource_downloader.py"],
     deps = [
@@ -70,6 +78,7 @@ py_library(
     name = "merchant_accounts_lib",
     srcs = ["merchant_accounts.py"],
     deps = [
+        ":utils_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
@@ -92,6 +101,7 @@ py_library(
     name = "merchant_lia_lib",
     srcs = ["merchant_lia.py"],
     deps = [
+        ":utils_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
@@ -114,6 +124,7 @@ py_library(
     name = "merchant_products_lib",
     srcs = ["merchant_products.py"],
     deps = [
+        ":utils_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
@@ -137,6 +148,7 @@ py_library(
     name = "merchant_shipping_lib",
     srcs = ["merchant_shipping.py"],
     deps = [
+        ":utils_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
@@ -322,8 +334,8 @@ py_library(
     deps = [
         ":performance_max_lib",
         ":product_lib",
-        ":resource_downloader_lib",
         ":shopping_lib",
+        ":utils_lib",
         "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//apache_beam",

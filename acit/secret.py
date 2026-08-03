@@ -145,7 +145,8 @@ class SecretsManager:
     crc32c = google_crc32c.Checksum()
     crc32c.update(response.payload.data)
 
-    assert response.payload.data_crc32c == int(crc32c.hexdigest(), 16)
+    if response.payload.data_crc32c != int(crc32c.hexdigest(), 16):
+      raise AssertionError('Secret Manager payload verification failed: checksum mismatch.')
 
     payload = response.payload.data.decode('UTF-8')
     return payload

@@ -74,83 +74,56 @@ def build_campaign(
 
 
 def _val(obj: Any, key: str, default: Any = None) -> Any:
-  """Polymorphic helper to get a field value from either a Protobuf or a dict."""
-  if isinstance(obj, dict):
-    return obj.get(key, default)
-  
+  """Helper to get a field value from a Protobuf message, handling Enums safely."""
   # For Protobuf messages, check if the field is an enum and convert to its name string
   if hasattr(obj, 'DESCRIPTOR'):
     field_desc = obj.DESCRIPTOR.fields_by_name.get(key)
     if field_desc and field_desc.type == field_desc.TYPE_ENUM:
       val_int = getattr(obj, key)
-      # Translate integer enum to its string name
-      return field_desc.enum_type.values_by_number[val_int].name
+      # Translate integer enum to its string name safely
+      enum_val = field_desc.enum_type.values_by_number.get(val_int)
+      if enum_val:
+        return enum_val.name
+      return str(val_int)
 
   return getattr(obj, key, default)
 
 
-def _get_attributes(product: Any) -> Any:
-  """Safely gets product attributes from either a WideProduct proto or a dictionary."""
-  # Case 1: product is a WideProduct proto
-  if hasattr(product, 'product'):
-    inner_prod = product.product
-    if hasattr(inner_prod, 'product_attributes'):
-      return inner_prod.product_attributes
-  # Case 2: product is a dict representing WideProduct
-  if isinstance(product, dict):
-    inner_prod = product.get('product')
-    if isinstance(inner_prod, dict):
-      return inner_prod.get('product_attributes') or {}
-    # Fallback Case 3: product itself is the attributes or inner product dict (used in some unit tests)
-    attrs = product.get('product_attributes')
-    if attrs is not None:
-      return attrs
-    return product
-  return {}
+def _get_attributes(product: schema_pb2.WideProduct) -> Any:
+  """Safely gets product attributes from a WideProduct proto."""
+  return product.product.product_attributes
 
 
-def set_product_in_stock(product: Any) -> Any:
+def set_product_in_stock(product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
   """Sets a key on the composite product status for product availability."""
-  attributes = _get_attributes(product)
+  import copy
+  product_copy = copy.deepcopy(product)
+  attributes = _get_attributes(product_copy)
   availability = _val(attributes, 'availability', '')
   in_stock = 'IN_STOCK' == availability
 
-  if isinstance(product, dict):
-    product['inStock'] = in_stock
-  else:
-    product.in_stock = in_stock
-  return product
+  product_copy.in_stock = in_stock
+  return product_copy
 
 
-def set_product_approved(product: Any) -> Any:
+def set_product_approved(product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
   """Sets a key depending on whether the offer is approved in all locations."""
-  if isinstance(product, dict):
-    status = product.get('status', {})
-    destinations = [
-        d
-        for d in status.get('destination_statuses', [])
-        if d.get('reporting_context') == 'SHOPPING_ADS'
-    ]
-    for destination in destinations:
-      product['approvedCountries'] = destination.get('approved_countries', [])
-      product['pendingCountries'] = destination.get('pending_countries', [])
-      product['disapprovedCountries'] = destination.get('disapproved_countries', [])
-      break
-  else:
-    destinations = [
-        d
-        for d in product.status.destination_statuses
-        if _val(d, 'reporting_context') == 'SHOPPING_ADS'
-    ]
-    for destination in destinations:
-      del product.approved_countries[:]
-      del product.pending_countries[:]
-      del product.disapproved_countries[:]
-      product.approved_countries.extend(destination.approved_countries)
-      product.pending_countries.extend(destination.pending_countries)
-      product.disapproved_countries.extend(destination.disapproved_countries)
-      break
-  return product
+  import copy
+  product_copy = copy.deepcopy(product)
+  destinations = [
+      d
+      for d in product_copy.status.destination_statuses
+      if _val(d, 'reporting_context') == 'SHOPPING_ADS'
+  ]
+  for destination in destinations:
+    del product_copy.approved_countries[:]
+    del product_copy.pending_countries[:]
+    del product_copy.disapproved_countries[:]
+    product_copy.approved_countries.extend(destination.approved_countries)
+    product_copy.pending_countries.extend(destination.pending_countries)
+    product_copy.disapproved_countries.extend(destination.disapproved_countries)
+    break
+  return product_copy
 
 
 def taxonomy_matches_dimension(

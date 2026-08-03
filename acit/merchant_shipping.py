@@ -38,12 +38,12 @@ MCA<->child relationship from the (already migrated) `accounts` table.
 
 from concurrent import futures
 import json
-from typing import Any
+from typing import Any, Iterable, Tuple
 
 from absl import logging
+from acit.utils import to_dict as _to_dict
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
-from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # Key stamped onto every row so downstream code knows the source account.
@@ -52,30 +52,7 @@ from google.shopping import merchant_accounts_v1 as ma
 METADATA_KEY = 'downloaderMetadata'
 
 
-def _to_dict(msg) -> Any:
-  """Proto -> dict in native v1 shape.
-
-  Args:
-    msg: The protobuf message to convert into a dictionary.
-
-  Returns:
-    A dictionary representation of the proto message in native v1 shape with
-    snake_case keys and string enum names, or None if the input message is
-    None.
-  """
-
-  if msg is None:
-    return None
-  # Extract the underlying native protobuf if it's a proto-plus wrapper
-  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
-  return json_format.MessageToDict(
-      pb_msg,
-      preserving_proto_field_name=True,
-      use_integers_for_enums=False,
-  )
-
-
-def _get_account_shipping(client, account_id):
+def _get_account_shipping(client: ma.ShippingSettingsServiceClient, account_id: str) -> ma.ShippingSettings | None:
   """Fetches v1 shipping settings for one account, as a native-shape dict.
 
   Args:
@@ -105,7 +82,7 @@ def _get_account_shipping(client, account_id):
 
 
 def download_shipping_settings(
-        credentials, account_ids, mc_path, max_workers=None):
+        credentials: Any, account_ids: Iterable[str], mc_path: Any, max_workers: int | None = None) -> None:
   """Downloads shipping settings from Merchant API v1, one file per account.
 
   Args:
@@ -119,9 +96,9 @@ def download_shipping_settings(
       Merchant API ingestion stages.
   """
   client = ma.ShippingSettingsServiceClient(credentials=credentials)
-  account_ids = list(account_ids)
+  account_ids_list = list(account_ids)
 
-  def _process(account_id):
+  def _process(account_id: str) -> Tuple[str, int]:
     settings = _get_account_shipping(client, account_id)
     # None (not accessible / no settings) -> write nothing; downstream MEX LEFT
     # JOINs default such accounts to "no account-level shipping".
@@ -149,7 +126,7 @@ def download_shipping_settings(
 
   total = 0
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
+    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids_list}
     for done in futures.as_completed(future_to_id):
       account_id, n = done.result()  # surface exceptions
       total += n

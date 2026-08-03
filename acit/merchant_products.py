@@ -31,11 +31,11 @@ out, derives the `channel` dimension, and joins Ads targeting.
 
 from concurrent import futures
 import json
-from typing import Any
+from typing import Any, Iterable, Tuple
 
 from absl import logging
+from acit.utils import to_dict as _to_dict
 from etils import epath
-from google.protobuf import json_format
 from google.shopping import merchant_products_v1 as mp
 
 # Key stamped onto every row so the Beam stage knows the source account. Mirrors
@@ -45,30 +45,7 @@ METADATA_KEY = 'downloaderMetadata'
 _PAGE_SIZE = 250
 
 
-def _to_dict(msg) -> Any:
-  """Proto -> dict in native v1 shape.
-
-  Args:
-    msg: The protobuf message to convert into a dictionary.
-
-  Returns:
-    A dictionary representation of the proto message in native v1 shape with
-    snake_case keys and string enum names, or None if the input message is
-    None.
-  """
-
-  if msg is None:
-    return None
-  # Extract the underlying native protobuf if it's a proto-plus wrapper
-  pb_msg = type(msg).pb(msg) if hasattr(type(msg), 'pb') else msg
-  return json_format.MessageToDict(
-      pb_msg,
-      preserving_proto_field_name=True,
-      use_integers_for_enums=False,
-  )
-
-
-def _list_leaf_products(client, account_id):
+def _list_leaf_products(client: mp.ProductsServiceClient, account_id: str) -> Iterable[mp.Product]:
   """Yields all v1 products for one leaf account, as native-shape dicts.
 
   This is a *generator*, deliberately. The GAPIC pager already fetches pages
@@ -95,10 +72,10 @@ def _list_leaf_products(client, account_id):
     yield product
 
 
-def download_products(credentials,
-                      account_ids,
-                      mc_path,
-                      max_workers=None):
+def download_products(credentials: Any,
+                      account_ids: Iterable[str],
+                      mc_path: Any,
+                      max_workers: int | None = None) -> None:
   """Downloads products from Merchant API v1 and writes per-account files.
 
   Args:
@@ -111,9 +88,9 @@ def download_products(credentials,
       Merchant API ingestion stages.
   """
   client = mp.ProductsServiceClient(credentials=credentials)
-  account_ids = list(account_ids)
+  account_ids_list = list(account_ids)
 
-  def _process(account_id):
+  def _process(account_id: str) -> Tuple[str, int]:
     output_file = (epath.Path(mc_path) / account_id / 'products' /
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +108,7 @@ def download_products(credentials,
 
   total = 0
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
+    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids_list}
     for done in futures.as_completed(future_to_id):
       account_id, n = done.result()  # surface exceptions
       total += n
