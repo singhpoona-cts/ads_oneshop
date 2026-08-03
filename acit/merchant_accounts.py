@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center *account* ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow
+This replaces the old Content API `accounts.authinfo` +
+`accounts.get`/`accounts.list` flow
 as part of the Content API -> Merchant API migration.
 
 The old monolithic `Account` object is split across many v1 sub-resources,
@@ -37,7 +38,7 @@ layout keeps the existing BigQuery glob
 """
 
 from concurrent import futures
-from dataclasses import dataclass
+import dataclasses
 import json
 from typing import Any, Dict
 
@@ -60,7 +61,7 @@ _SERVICE_TYPE_FIELDS = (
 )
 
 
-@dataclass
+@dataclasses.dataclass
 class AccountRecord:
   """Strongly-typed wrapper representing an aggregated Merchant account."""
   account_id: str
@@ -104,11 +105,20 @@ def _to_dict(msg) -> Any:
 
 
 def _serialize_record(record: AccountRecord) -> Dict[str, Any]:
-  """Serializes a strongly-typed AccountRecord into the exact BigQuery schema dict."""
+  """Serializes a strongly-typed AccountRecord into the exact BQ schema dict."""
   homepage_dict = _to_dict(record.homepage) if record.homepage else None
-  business_info_dict = _to_dict(record.business_info) if record.business_info else None
-  business_identity_dict = _to_dict(record.business_identity) if record.business_identity else None
-  automatic_improvements_dict = _to_dict(record.automatic_improvements) if record.automatic_improvements else None
+  business_info_dict = (
+      _to_dict(record.business_info)
+      if record.business_info
+      else None)
+  business_identity_dict = (
+      _to_dict(record.business_identity)
+      if record.business_identity
+      else None)
+  automatic_improvements_dict = (
+      _to_dict(record.automatic_improvements)
+      if record.automatic_improvements
+      else None)
   time_zone_dict = _to_dict(record.time_zone) if record.time_zone else None
 
   users_dicts = [_to_dict(u) for u in record.users]

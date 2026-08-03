@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center *product* ingestion via the Merchant API (stable v1).
 
-This replaces the old per-leaf Content API `products.list` + `productstatuses.list` pulls
+This replaces the old per-leaf Content API
+`products.list` + `productstatuses.list` pulls
 as part of the Content API -> Merchant API migration.
 
 In the Merchant API the processed `Product` resource carries BOTH the offer

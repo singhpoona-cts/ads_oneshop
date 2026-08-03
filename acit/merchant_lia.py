@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center omnichannel / LIA ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `liasettings.get` (per account) + `liasettings.list` (MCA roll-down) pulls
+This replaces the old Content API `liasettings.get`
+(per account) + `liasettings.list` (MCA roll-down) pulls
 as part of the Content API -> Merchant API migration.
 
 The Merchant API has no `liasettings` resource: the Local Inventory Ads /
@@ -83,9 +84,9 @@ def _list_account_omnichannel(client, account_id):
     account_id: The string or integer ID of the account to query.
 
   Returns:
-    A (possibly empty) list of per-region OmnichannelSetting messages, or None if
-    the account is not a valid parent for this method (e.g., an aggregator
-    or MCA resulting in PermissionDenied).
+    A (possibly empty) list of per-region OmnichannelSetting messages,
+    or None if the account is not a valid parent for this
+    method (e.g., an aggregator or MCA resulting in PermissionDenied).
   """
   parent = f'accounts/{account_id}'
   try:

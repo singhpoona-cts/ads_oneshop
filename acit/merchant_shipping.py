@@ -13,9 +13,9 @@
 # limitations under the License.
 """Merchant Center shipping-settings ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `shippingsettings.get` (per account) + `shippingsettings.list` (MCA
-roll-down) pulls as part of the Content API -> Merchant API migration. This was the LAST Content API resource;
-once it is gone the Content API (`discovery.build('content', 'v2.1')`) is no longer used.
+This replaces the old Content API `shippingsettings.get`
+(per account) + `shippingsettings.list` (MCA roll-down) pulls as part of
+the Content API -> Merchant API migration.
 
 In the Merchant API, account-level shipping config lives in
 **ShippingSettings**, a singleton per account fetched via
