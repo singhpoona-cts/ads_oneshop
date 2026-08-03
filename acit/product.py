@@ -77,6 +77,15 @@ def _val(obj: Any, key: str, default: Any = None) -> Any:
   """Polymorphic helper to get a field value from either a Protobuf or a dict."""
   if isinstance(obj, dict):
     return obj.get(key, default)
+  
+  # For Protobuf messages, check if the field is an enum and convert to its name string
+  if hasattr(obj, 'DESCRIPTOR'):
+    field_desc = obj.DESCRIPTOR.fields_by_name.get(key)
+    if field_desc and field_desc.type == field_desc.TYPE_ENUM:
+      val_int = getattr(obj, key)
+      # Translate integer enum to its string name
+      return field_desc.enum_type.values_by_number[val_int].name
+
   return getattr(obj, key, default)
 
 
@@ -131,7 +140,7 @@ def set_product_approved(product: Any) -> Any:
     destinations = [
         d
         for d in product.status.destination_statuses
-        if d.reporting_context == 'SHOPPING_ADS'
+        if _val(d, 'reporting_context') == 'SHOPPING_ADS'
     ]
     for destination in destinations:
       del product.approved_countries[:]

@@ -654,3 +654,34 @@ class ProductTest(parameterized.TestCase):
     product_util.build_product_group_tree(dimensions, root, is_targeted)
 
     self.assertEqual(expected, root)
+
+  def test_protobuf_enum_matching_and_type_preservation(self):
+    """Verifies that our enum-aware _val helper correctly handles native Protobuf enums."""
+    # Construct a real schema_pb2.WideProduct containing nested Protobufs
+    wide = schema_pb2.WideProduct()
+    wide.channel = 'online'
+    wide.product.product_attributes.availability = 'IN_STOCK' # Enum value (internally int 1)
+    wide.product.product_attributes.condition = 'NEW' # Enum value (internally int 1)
+    wide.product.product_attributes.brand = 'TestBrand'
+    
+    # Verify set_product_in_stock matches "IN_STOCK" string against integer enum 1 correctly
+    product_util.set_product_in_stock(wide)
+    self.assertTrue(wide.in_stock)
+
+    # Verify set_product_approved matches "SHOPPING_ADS" enum 6 correctly
+    status_msg = wide.status.destination_statuses.add()
+    status_msg.reporting_context = 'SHOPPING_ADS' # Enum value 6
+    status_msg.approved_countries.append('US')
+    product_util.set_product_approved(wide)
+    self.assertEqual(list(wide.approved_countries), ['US'])
+
+    # Verify dimension_matches_product matches condition enum correctly without raising AttributeError
+    dimension = {
+        'productCondition': {
+            'condition': 'NEW'
+        }
+    }
+    self.assertTrue(
+        product_util.dimension_matches_product(wide, dimension, {})
+    )
+
