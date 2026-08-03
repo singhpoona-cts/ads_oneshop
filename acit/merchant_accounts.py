@@ -37,7 +37,7 @@ layout keeps the existing BigQuery glob
 """
 
 from concurrent import futures
-from dataclasses import dataclass
+import dataclasses
 import json
 from typing import Any, Dict
 
@@ -60,7 +60,7 @@ _SERVICE_TYPE_FIELDS = (
 )
 
 
-@dataclass
+@dataclasses.dataclass
 class AccountRecord:
   """Strongly-typed wrapper representing an aggregated Merchant account."""
   account_id: str

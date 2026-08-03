@@ -65,7 +65,7 @@ class MerchantAccountsTest(absltest.TestCase):
     serialized = merchant_accounts._serialize_record(record)  # pylint: disable=protected-access
     self.assertEqual(serialized['account_id'], '123')
     self.assertEqual(serialized['account_name'], 'Test Name')
-    self.assertEqual(serialized['time_zone'], None)
+    self.assertIsNone(serialized['time_zone'])
     self.assertEqual(serialized['homepage']['uri'], 'https://example.com')
     self.assertEqual(serialized['homepage']['claimed'], True)
     self.assertEqual(serialized['account_services'][0]['service_type'], 'ACCOUNT_AGGREGATION')

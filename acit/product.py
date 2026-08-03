@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Merchant Center product data helpers."""
-
+"""Merchant Center product data helpers (strongly typed via Protobuf)."""
 
 from typing import Optional, Dict, Tuple, List, Callable, Any, TypedDict, Iterable
+from acit.api.v0.storage import schema_pb2
 
 # 1-indexed dimension levels
 _PRODUCT_DIMENSION_LEVELS = [
@@ -73,39 +73,74 @@ def build_campaign(
   return []
 
 
-def _attrs(product):
-  """Returns the native v1 `product_attributes` sub-dict (or empty)."""
-  return product.get('product_attributes') or {}
+def _val(obj: Any, key: str, default: Any = None) -> Any:
+  """Polymorphic helper to get a field value from either a Protobuf or a dict."""
+  if isinstance(obj, dict):
+    return obj.get(key, default)
+  return getattr(obj, key, default)
 
 
-def set_product_in_stock(product):
+def _get_attributes(product: Any) -> Any:
+  """Safely gets product attributes from either a WideProduct proto or a dictionary."""
+  # Case 1: product is a WideProduct proto
+  if hasattr(product, 'product'):
+    inner_prod = product.product
+    if hasattr(inner_prod, 'product_attributes'):
+      return inner_prod.product_attributes
+  # Case 2: product is a dict representing WideProduct
+  if isinstance(product, dict):
+    inner_prod = product.get('product')
+    if isinstance(inner_prod, dict):
+      return inner_prod.get('product_attributes') or {}
+    # Fallback Case 3: product itself is the attributes or inner product dict (used in some unit tests)
+    attrs = product.get('product_attributes')
+    if attrs is not None:
+      return attrs
+    return product
+  return {}
+
+
+def set_product_in_stock(product: Any) -> Any:
   """Sets a key on the composite product status for product availability."""
-  # v1 `availability` is an enum NAME string (was the lower-case "in stock").
-  product['inStock'] = 'IN_STOCK' == _attrs(product['product']).get(
-      'availability', ''
-  )
+  attributes = _get_attributes(product)
+  availability = _val(attributes, 'availability', '')
+  in_stock = 'IN_STOCK' == availability
+
+  if isinstance(product, dict):
+    product['inStock'] = in_stock
+  else:
+    product.in_stock = in_stock
   return product
 
 
-def set_product_approved(product):
+def set_product_approved(product: Any) -> Any:
   """Sets a key depending on whether the offer is approved in all locations."""
-  # NOTE: Everything that can be targeted is always Shopping (v1: SHOPPING_ADS).
-  # v1 folds status into the product; `status` is the split-out `product_status`
-  # with snake_case fields and `reporting_context` (was `destination`).
-  destinations = [
-      d
-      for d in product['status'].get('destination_statuses', [])
-      if d.get('reporting_context') == 'SHOPPING_ADS'
-  ]
-  # Should only be one
-  for destination in destinations:
-    # Must not modify Beam inputs, so make a copy
-    result = {**product}
-    result['approvedCountries'] = destination.get('approved_countries', [])
-    result['pendingCountries'] = destination.get('pending_countries', [])
-    result['disapprovedCountries'] = destination.get('disapproved_countries',
-                                                     [])
-    return result
+  if isinstance(product, dict):
+    status = product.get('status', {})
+    destinations = [
+        d
+        for d in status.get('destination_statuses', [])
+        if d.get('reporting_context') == 'SHOPPING_ADS'
+    ]
+    for destination in destinations:
+      product['approvedCountries'] = destination.get('approved_countries', [])
+      product['pendingCountries'] = destination.get('pending_countries', [])
+      product['disapprovedCountries'] = destination.get('disapproved_countries', [])
+      break
+  else:
+    destinations = [
+        d
+        for d in product.status.destination_statuses
+        if d.reporting_context == 'SHOPPING_ADS'
+    ]
+    for destination in destinations:
+      del product.approved_countries[:]
+      del product.pending_countries[:]
+      del product.disapproved_countries[:]
+      product.approved_countries.extend(destination.approved_countries)
+      product.pending_countries.extend(destination.pending_countries)
+      product.disapproved_countries.extend(destination.disapproved_countries)
+      break
   return product
 
 
@@ -170,20 +205,23 @@ def dimension_is_wildcard(dimension) -> bool:
 
 
 def dimension_matches_product(
-    product: Any, dimension: Any, category_names_by_id: dict[str, str]
-):
+    product: Any,
+    dimension: Any,
+    category_names_by_id: dict[str, str],
+) -> bool:
   """Whether the provided dimension matches the product."""
   if dimension_is_wildcard(dimension):
     return True
 
-  attributes = _attrs(product)
+  attributes = _get_attributes(product)
 
   if 'productCategory' in dimension:
     level = dimension['productCategory']['level']
     id_ = dimension['productCategory']['categoryId']
 
     taxonomy_index = _PRODUCT_DIMENSION_LEVELS.index(level)
-    taxonomy_tokens = attributes.get('google_product_category', '').split(' > ')
+    google_product_category = _val(attributes, 'google_product_category', '')
+    taxonomy_tokens = google_product_category.split(' > ')
     if not taxonomy_index < len(taxonomy_tokens):
       # Ad criteria is too granular
       return False
@@ -198,51 +236,54 @@ def dimension_matches_product(
   # Ads and MC have inconsistent case processing.
 
   if 'productBrand' in dimension:
+    brand = _val(attributes, 'brand', '')
     return (
         dimension['productBrand']['value'].lower()
-        == attributes.get('brand', '').lower()
+        == brand.lower()
     )
   if 'productChannel' in dimension:
     # `channel` is derived (online/local) from the v1 `legacy_local` flag and
-    # set on the product in the Beam stage.
+    # set at the root of the WideProduct in the Beam stage.
+    channel = _val(product, 'channel', '')
     return (
         dimension['productChannel']['channel'].lower()
-        == product.get('channel', '').lower()
+        == channel.lower()
     )
-  # TODO: Channel exclusivity requires checking whether two offers IDs
-  #       within the same feed label and language have only online or
-  #       offline offers. This needs to be injected further up.
-  #       For now (the setting seems rare), assume multichannel.
-  #       (The Merchant API v1 Product no longer exposes channel exclusivity.)
   if 'productChannelExclusivity' in dimension:
+    # Google API Product does not expose channel exclusivity anymore, assume MULTI_CHANNEL.
     return (
         dimension['productChannelExclusivity']['channelExclusivity'].lower()
-        == product.get('channelExclusivity', 'MULTI_CHANNEL').lower()
+        == 'multi_channel'
     )
   if 'productCondition' in dimension:
     # v1 `condition` is an enum NAME string (NEW/USED/REFURBISHED); lower-cased
     # it matches the Ads dimension value (new/used/refurbished).
+    condition = _val(attributes, 'condition', '')
     return (
         dimension['productCondition']['condition'].lower()
-        == attributes.get('condition', '').lower()
+        == condition.lower()
     )
   if 'productCustomAttribute' in dimension:
     info = dimension['productCustomAttribute']
     depth = _PRODUCT_DIMENSION_INDICES.index(info['index'])
-    product_label = attributes.get(f'custom_label_{depth}', '')
+    product_label = _val(attributes, f'custom_label_{depth}', '')
     return info['value'].lower() == product_label.lower()
   if 'productItemId' in dimension:
+    offer_id = _val(product, 'offerId', '') or _val(product, 'offer_id', '')
+    if not offer_id and hasattr(product, 'product'):
+      offer_id = product.product.offer_id
+    if not offer_id and isinstance(product, dict) and 'product' in product:
+      offer_id = product['product'].get('offer_id')
     return (
         dimension['productItemId']['value'].lower()
-        == product['offer_id'].lower()
+        == str(offer_id).lower()
     )
-  # TODO: Fix. Product Type is a freetext field within MC.
-  #       There's an edge case where data is bad, and ">" does not
-  #       adequately delimit. So "A > B > > > C" is [A, B, >, C].
   if 'productType' in dimension:
+    product_types = _val(attributes, 'product_types', []) or []
+    product_types = list(product_types)
+    first_type = product_types[0] if product_types else ''
     return taxonomy_matches_dimension(
-        # Always get the first one
-        (attributes.get('product_types', []) or [''])[0],
+        first_type,
         dimension,
         'productType',
         'level',
@@ -287,7 +328,9 @@ class ProductTargetingTree(TypedDict):
 
 
 def product_targeted_by_tree(
-    product, node: ProductTargetingNode, category_names_by_id: dict[str, str]
+    product: Any,
+    node: ProductTargetingNode,
+    category_names_by_id: dict[str, str]
 ) -> bool:
   """Recursively checks whether a product is targeted by a tree."""
   is_targeted = node.get('isTargeted')
@@ -357,21 +400,24 @@ def build_product_group_tree(
 
 def campaign_matches_product_status(
     campaign: Campaign,
-    product_status,
+    product_status: Any,
     category_names_by_id,
     language_codes_by_resource_name,
 ) -> bool:
   # TODO: unit test this
-  product = product_status['product']
-  if campaign['merchant_id'] != product_status['accountId']:
+  product = _val(product_status, 'product')
+  account_id = _val(product_status, 'accountId') or _val(product_status, 'account_id')
+  if campaign['merchant_id'] != account_id:
     return False
   campaign_label = campaign['feed_label'].lower()
-  if campaign_label and campaign_label != product['feed_label'].lower():
+  feed_label = _val(product, 'feed_label', '')
+  if campaign_label and campaign_label != feed_label.lower():
     return False
-  if not campaign['enable_local'] and product_status['channel'] == 'local':
+  channel = _val(product_status, 'channel', '')
+  if not campaign['enable_local'] and channel == 'local':
     return False
   for dimension in campaign['inventory_filter_dimensions']:
-    if not dimension_matches_product(product, dimension, category_names_by_id):
+    if not dimension_matches_product(product_status, dimension, category_names_by_id):
       return False
 
   # Language targeting
@@ -386,12 +432,13 @@ def campaign_matches_product_status(
       if not lang['is_targeted']
   ]
 
+  content_language = _val(product, 'content_language', '')
   if (
       positive_languages
-      and product['content_language'] not in positive_languages
+      and content_language not in positive_languages
   ):
     return False
-  if product['content_language'] in negative_languages:
+  if content_language in negative_languages:
     return False
   return True
 
@@ -418,14 +465,15 @@ def get_campaign_targeting(
   """
 
   matched_trees = []
-  for campaign in campaigns_by_merchant_id.get(product['accountId'], []):
+  account_id = _val(product, 'accountId') or _val(product, 'account_id')
+  for campaign in campaigns_by_merchant_id.get(account_id, []):
     if not campaign_matches_product_status(
         campaign, product, category_names_by_id, language_codes_by_resource_name
     ):
       continue
     for tree in trees_by_campaign_id.get(campaign['campaign_id'], []):
       if product_targeted_by_tree(
-          product['product'], tree['node'], category_names_by_id
+          product, tree['node'], category_names_by_id
       ):
         matched_trees.append(tree)
 

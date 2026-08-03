@@ -281,43 +281,64 @@ def main(argv):
         beam.GroupByKey())
 
     def split_v1_product(p):
-      """Splits a native v1 Product into the wide record.
+      """Splits a native v1 Product into a strongly-typed WideProduct message.
 
-      In the Merchant API a `Product` carries its status inline,
-      so instead of a products<->statuses join we split `product_status`
-      out into `status` and derive the `channel` dimension
-      (the Ads `performance` FK still keys on channel; v1 exposes only
-      the `legacy_local` boolean).
+      In the v1 Product representation, we parse the raw dictionary into
+      the official `schema_pb2.WideProduct` Protobuf compiled message class,
+      entirely eliminating "type erasure" throughout the pipeline.
 
       Args:
           p: A native v1 `Product` dict, as read from
           `merchant_center/*/products/*.jsonlines`.
 
       Returns:
-          A dict with `accountId`, `offerId`, `channel`, `product`, and
-          `status` keys, ready to be joined with Ads targeting data.
+          A strongly-typed schema_pb2.WideProduct object.
       """
       account_id = p[resource_downloader.METADATA_KEY]['accountId']
       status = p.pop('product_status', None) or {}
       channel = 'local' if p.get('legacy_local') else 'online'
-      return {
+      
+      wide_row = {
           'accountId': account_id,
           'offerId': p.get('offer_id'),
           'channel': channel,
           'product': p,
           'status': status,
       }
+      
+      msg = schema_pb2.WideProduct()
+      json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
+      return msg
 
     product_statuses = (
         products
         | 'Build wide product records' >> beam.Map(split_v1_product))
 
-    all_products = (
+    def products_table_row(tup):
+      """Prepare data for JSON serialization."""
+      # Tup is (product, shopping_campaign_ids) where product was already processed by PMax Combine.
+      product_obj, shopping_campaign_ids = tup
+      # Note: we need to assign the list values back to the proto message fields safely
+      product_obj.has_shopping_targeting = True if shopping_campaign_ids else False
+      del product_obj.shopping_campaign_ids[:]
+      product_obj.shopping_campaign_ids.extend([int(cid) for cid in shopping_campaign_ids])
+      
+      return json_format.MessageToDict(product_obj,
+                                       preserving_proto_field_name=True)
+
+    def pmax_combine_row(tup):
+      # Tup is (product, pmax_campaign_ids)
+      product_obj, pmax_campaign_ids = tup
+      product_obj.has_performance_max_targeting = True if pmax_campaign_ids else False
+      del product_obj.performance_max_campaign_ids[:]
+      product_obj.performance_max_campaign_ids.extend([int(cid) for cid in pmax_campaign_ids])
+      return product_obj
+
+    # Hook pmax_combine_row between the PMax and Shopping targeting stages to pass proto correctly
+    all_products_pmax = (
         product_statuses
-        # Extract info in the products themselves
         | 'Approved' >> beam.Map(product.set_product_approved)
         | 'In Stock' >> beam.Map(product.set_product_in_stock)
-        # Add PMax targeting. Side-input views provide in-memory lookups.
         | 'Get PMax targeting' >> beam.FlatMap(
             product.get_campaign_targeting,
             pvalue.AsDict(pmax_trees_by_campaign_id),
@@ -325,16 +346,12 @@ def main(argv):
             pvalue.AsDict(category_names_by_id),
             pvalue.AsDict(language_codes_by_resource_name),
         )
-        | 'Combine PMax targeting' >> beam.MapTuple(
-            lambda product, trees: {
-                **product,
-                'hasPerformanceMaxTargeting':
-                True if trees else False,
-                'performanceMaxCampaignIds':
-                list(set([t['campaign_id'] for t in trees])),
-            })
-        # Add Shopping targeting. Side-input views
-        # provide in-memory lookups.
+        | 'Combine PMax targeting raw' >> beam.MapTuple(
+            lambda product, trees: (
+                product,
+                list(set([t['campaign_id'] for t in trees]))
+            ))
+        | 'Combine PMax targeting to proto' >> beam.Map(pmax_combine_row)
         | 'Get Shopping targeting' >> beam.FlatMap(
             product.get_campaign_targeting,
             pvalue.AsDict(shopping_trees_by_campaign_id),
@@ -342,26 +359,14 @@ def main(argv):
             pvalue.AsDict(category_names_by_id),
             pvalue.AsDict(language_codes_by_resource_name),
         )
-        | 'Combine Shopping targeting' >> beam.MapTuple(
-            lambda product, trees: {
-                **product,
-                'hasShoppingTargeting':
-                True if trees else False,
-                'shoppingCampaignIds':
-                list(set([t['campaign_id'] for t in trees])),
-            }))
+        | 'Combine Shopping targeting raw' >> beam.MapTuple(
+            lambda product, trees: (
+                product,
+                list(set([t['campaign_id'] for t in trees]))
+            ))
+    )
 
-    def products_table_row(row):
-      """Prepare data for JSON serialization."""
-      # The v1 product carries the downloader metadata; status is derived
-      # from it and has none of its own.
-      row['product'].pop('downloaderMetadata', None)
-      msg = schema_pb2.WideProduct()
-      json_format.ParseDict(row, msg, ignore_unknown_fields=True)
-      return json_format.MessageToDict(msg,
-                                       preserving_proto_field_name=True)
-
-    _ = (all_products
+    _ = (all_products_pmax
          | 'Convert to final products table output' >>
          beam.Map(products_table_row)
          | 'JSON' >> beam.Map(json.dumps)

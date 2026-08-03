@@ -213,6 +213,9 @@ pkg_tar(
 py_library(
     name = "product_lib",
     srcs = ["product.py"],
+    deps = [
+        "//acit/api/v0:schema_py_pb2",
+    ],
 )
 
 py_test(
