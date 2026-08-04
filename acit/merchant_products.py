@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center *product* ingestion via the Merchant API (stable v1).
 
-This replaces the old per-leaf Content API `products.list` + `productstatuses.list` pulls
+This replaces the old per-leaf Content API
+`products.list` + `productstatuses.list` pulls
 as part of the Content API -> Merchant API migration.
 
 In the Merchant API the processed `Product` resource carries BOTH the offer
@@ -45,7 +46,9 @@ METADATA_KEY = 'downloaderMetadata'
 _PAGE_SIZE = 250
 
 
-def _list_leaf_products(client: mp.ProductsServiceClient, account_id: str) -> Iterable[mp.Product]:
+def _list_leaf_products(
+    client: mp.ProductsServiceClient, account_id: str
+    ) -> Iterable[mp.Product]:
   """Yields all v1 products for one leaf account, as native-shape dicts.
 
   This is a *generator*, deliberately. The GAPIC pager already fetches pages

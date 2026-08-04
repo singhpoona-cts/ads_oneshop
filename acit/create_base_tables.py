@@ -297,7 +297,7 @@ def main(argv):
       account_id = p[METADATA_KEY]['accountId']
       status = p.pop('product_status', None) or {}
       channel = 'local' if p.get('legacy_local') else 'online'
-      
+
       wide_row = {
           'accountId': account_id,
           'offerId': p.get('offer_id'),
@@ -305,7 +305,7 @@ def main(argv):
           'product': p,
           'status': status,
       }
-      
+
       msg = schema_pb2.WideProduct()
       json_format.ParseDict(wide_row, msg, ignore_unknown_fields=True)
       return msg
@@ -316,15 +316,17 @@ def main(argv):
 
     def products_table_row(tup):
       """Prepare data for JSON serialization."""
-      # Tup is (product, shopping_campaign_ids) where product was already processed by PMax Combine.
+      # Tup is (product, shopping_campaign_ids) where product was already
+      # processed by PMax Combine.
       product_obj, shopping_campaign_ids = tup
       import copy
       product_obj_copy = copy.deepcopy(product_obj)
-      # Note: we need to assign the list values back to the proto message fields safely
-      product_obj_copy.has_shopping_targeting = True if shopping_campaign_ids else False
+      product_obj_copy.has_shopping_targeting = (
+          True if shopping_campaign_ids else False)
       del product_obj_copy.shopping_campaign_ids[:]
-      product_obj_copy.shopping_campaign_ids.extend([int(cid) for cid in shopping_campaign_ids])
-      
+      product_obj_copy.shopping_campaign_ids.extend(
+          [int(cid) for cid in shopping_campaign_ids])
+
       return json_format.MessageToDict(product_obj_copy,
                                        preserving_proto_field_name=True)
 
@@ -333,12 +335,15 @@ def main(argv):
       product_obj, pmax_campaign_ids = tup
       import copy
       product_obj_copy = copy.deepcopy(product_obj)
-      product_obj_copy.has_performance_max_targeting = True if pmax_campaign_ids else False
+      product_obj_copy.has_performance_max_targeting = (
+          True if pmax_campaign_ids else False)
       del product_obj_copy.performance_max_campaign_ids[:]
-      product_obj_copy.performance_max_campaign_ids.extend([int(cid) for cid in pmax_campaign_ids])
+      product_obj_copy.performance_max_campaign_ids.extend(
+          [int(cid) for cid in pmax_campaign_ids])
       return product_obj_copy
 
-    # Hook pmax_combine_row between the PMax and Shopping targeting stages to pass proto correctly
+    # Hook pmax_combine_row between the PMax and Shopping
+    # targeting stages to pass proto correctly
     all_products_pmax = (
         product_statuses
         | 'Approved' >> beam.Map(product.set_product_approved)

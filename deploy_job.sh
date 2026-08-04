@@ -72,7 +72,7 @@ export USE_TEST_ACCOUNTS="${USE_TEST_ACCOUNTS:-false}"
 
 # TODO: Parameterize secret name
 # NOTE: If image is changed, change here, too, and pass to container
-gcloud run jobs deploy ads-oneshop-job-v13 \
+gcloud run jobs deploy ads-oneshop-job \
     --project "${GOOGLE_CLOUD_PROJECT}" \
     --region "${DATAFLOW_REGION}" \
     --service-account="${CLOUD_RUN_SERVICE_ACCOUNT}" \

@@ -68,7 +68,9 @@ class MerchantAccountsTest(absltest.TestCase):
     self.assertIsNone(serialized['time_zone'])
     self.assertEqual(serialized['homepage']['uri'], 'https://example.com')
     self.assertEqual(serialized['homepage']['claimed'], True)
-    self.assertEqual(serialized['account_services'][0]['service_type'], 'ACCOUNT_AGGREGATION')
+    self.assertEqual(serialized['account_services'][0]['service_type'],
+                     'ACCOUNT_AGGREGATION'
+                     )
 
 
 if __name__ == '__main__':

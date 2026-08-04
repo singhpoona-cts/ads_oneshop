@@ -13,9 +13,9 @@
 # limitations under the License.
 """Merchant Center shipping-settings ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `shippingsettings.get` (per account) + `shippingsettings.list` (MCA
-roll-down) pulls as part of the Content API -> Merchant API migration. This was the LAST Content API resource;
-once it is gone the Content API (`discovery.build('content', 'v2.1')`) is no longer used.
+This replaces the old Content API `shippingsettings.get`
+(per account) + `shippingsettings.list` (MCA
+roll-down) pulls as part of the Content API -> Merchant API migration.
 
 In the Merchant API, account-level shipping config lives in
 **ShippingSettings**, a singleton per account fetched via
@@ -52,7 +52,9 @@ from google.shopping import merchant_accounts_v1 as ma
 METADATA_KEY = 'downloaderMetadata'
 
 
-def _get_account_shipping(client: ma.ShippingSettingsServiceClient, account_id: str) -> ma.ShippingSettings | None:
+def _get_account_shipping(
+    client: ma.ShippingSettingsServiceClient, account_id: str
+    ) -> ma.ShippingSettings | None:
   """Fetches v1 shipping settings for one account, as a native-shape dict.
 
   Args:
@@ -82,7 +84,10 @@ def _get_account_shipping(client: ma.ShippingSettingsServiceClient, account_id: 
 
 
 def download_shipping_settings(
-        credentials: Any, account_ids: Iterable[str], mc_path: Any, max_workers: int | None = None) -> None:
+    credentials: Any,
+    account_ids: Iterable[str],
+    mc_path: Any, max_workers: int | None = None
+    ) -> None:
   """Downloads shipping settings from Merchant API v1, one file per account.
 
   Args:

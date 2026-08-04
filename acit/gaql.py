@@ -73,7 +73,7 @@ _PREFIX = flags.DEFINE_string(
 
 _ADS_API_VERSION = flags.DEFINE_string(
     'ads_api_version',
-    'v22',
+    'v17',
     'The version of the Ads API to use',
 )
 
@@ -267,7 +267,6 @@ def run_query(
         completed.result()
   except Exception as executor_exception:
     logging.exception(executor_exception)
-    raise executor_exception
 
 
 def main(unused_argv):

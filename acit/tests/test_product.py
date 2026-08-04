@@ -14,9 +14,9 @@
 
 from absl.testing import absltest
 from absl.testing import parameterized
-
 from acit import product as product_util
 from acit.api.v0.storage import schema_pb2
+from google.protobuf import json_format
 
 _PRODUCT_CATEGORIES_BY_ID = {
     '1': 'Animals & Pet Supplies',
@@ -30,14 +30,16 @@ def _to_camel_case(snake_str):
 
 
 def _convert_dict_to_camel_case(d):
+  """Recursively converts keys to camelCase and standardizes enum values."""
   if isinstance(d, list):
     return [_convert_dict_to_camel_case(x) for x in d]
   if isinstance(d, dict):
     new_dict = {}
     for k, v in d.items():
       camel_key = _to_camel_case(k)
-      # Standardize enum strings to uppercase so json_format.ParseDict maps them successfully
-      if camel_key in ('condition', 'availability', 'reportingContext') and isinstance(v, str):
+      if camel_key in ('condition',
+                       'availability',
+                       'reportingContext') and isinstance(v, str):
         v = v.upper()
       new_dict[camel_key] = _convert_dict_to_camel_case(v)
     return new_dict
@@ -330,7 +332,6 @@ class ProductTest(parameterized.TestCase):
   def test_specific_dimension_matches_product(self, product, dimension,
                                               expected):
     """Tests whether a single targeting dimension match a given product."""
-    from google.protobuf import json_format
     camel_product = _convert_dict_to_camel_case(product)
     wide_row = {}
     if 'productAttributes' in camel_product:
@@ -414,7 +415,6 @@ class ProductTest(parameterized.TestCase):
       },
   )
   def test_product_targeted_by_tree(self, product, tree, expected):
-    from google.protobuf import json_format
     camel_product = _convert_dict_to_camel_case(product)
     wide_row = {}
     if 'productAttributes' in camel_product:
@@ -554,7 +554,6 @@ class ProductTest(parameterized.TestCase):
   def test_product_targeted_by_unbalanced_tree(self, product, node,
                                                expected):
     """Tests whether a product matches targeting in an unbalanced tree."""
-    from google.protobuf import json_format
     camel_product = _convert_dict_to_camel_case(product)
     wide_row = {}
     if 'productAttributes' in camel_product:
@@ -709,22 +708,23 @@ class ProductTest(parameterized.TestCase):
     # Construct a real schema_pb2.WideProduct containing nested Protobufs
     wide = schema_pb2.WideProduct()
     wide.channel = 'online'
-    wide.product.product_attributes.availability = 1 # 'IN_STOCK' Enum value (internally int 1)
-    wide.product.product_attributes.condition = 1 # 'NEW' Enum value (internally int 1)
+    # 'IN_STOCK' Enum value (internally int 1)
+    wide.product.product_attributes.availability = 1
+    # 'NEW' Enum value (internally int 1)
+    wide.product.product_attributes.condition = 1
     wide.product.product_attributes.brand = 'TestBrand'
-    
-    # Verify set_product_in_stock matches "IN_STOCK" string against integer enum 1 correctly
+    # Verify set_product_in_stock matches "IN_STOCK"
+    # string against integer enum 1 correctly
     wide = product_util.set_product_in_stock(wide)
     self.assertTrue(wide.in_stock)
 
     # Verify set_product_approved matches "SHOPPING_ADS" enum 1 correctly
     status_msg = wide.status.destination_statuses.add()
-    status_msg.reporting_context = 1 # 'SHOPPING_ADS' Enum value 1
+    status_msg.reporting_context = 1  # 'SHOPPING_ADS' Enum value 1
     status_msg.approved_countries.append('US')
     wide = product_util.set_product_approved(wide)
     self.assertEqual(list(wide.approved_countries), ['US'])
 
-    # Verify dimension_matches_product matches condition enum correctly without raising AttributeError
     dimension = {
         'productCondition': {
             'condition': 'NEW'
@@ -736,5 +736,3 @@ class ProductTest(parameterized.TestCase):
 
 if __name__ == '__main__':
   absltest.main()
-
-

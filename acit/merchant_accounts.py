@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center *account* ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `accounts.authinfo` + `accounts.get`/`accounts.list` flow
+This replaces the old Content API
+`accounts.authinfo` + `accounts.get`/`accounts.list` flow
 as part of the Content API -> Merchant API migration.
 
 The old monolithic `Account` object is split across many v1 sub-resources,
@@ -45,7 +46,6 @@ from absl import logging
 from acit.utils import to_dict as _to_dict
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
-from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # AccountService.service_type oneof members (each is an
@@ -82,12 +82,24 @@ class AccountRecord:
 
 
 def _serialize_record(record: AccountRecord) -> Dict[str, Any]:
-  """Serializes a strongly-typed AccountRecord into the exact BigQuery schema dict."""
-  homepage_dict = _to_dict(record.homepage) if record.homepage else None
-  business_info_dict = _to_dict(record.business_info) if record.business_info else None
-  business_identity_dict = _to_dict(record.business_identity) if record.business_identity else None
-  automatic_improvements_dict = _to_dict(record.automatic_improvements) if record.automatic_improvements else None
-  time_zone_dict = _to_dict(record.time_zone) if record.time_zone else None
+  """Serializes a strongly-typed AccountRecord into the exact BQ schema dict."""
+  homepage_dict = (
+      _to_dict(record.homepage) if record.homepage else None
+  )
+  business_info_dict = (
+      _to_dict(record.business_info) if record.business_info else None
+  )
+  business_identity_dict = (
+      _to_dict(record.business_identity) if record.business_identity else None
+  )
+  automatic_improvements_dict = (
+      _to_dict(record.automatic_improvements)
+      if record.automatic_improvements
+      else None
+  )
+  time_zone_dict = (
+      _to_dict(record.time_zone) if record.time_zone else None
+  )
 
   users_dicts = [_to_dict(u) for u in record.users]
   relationships_dicts = [_to_dict(r) for r in record.account_relationships]

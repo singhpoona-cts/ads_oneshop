@@ -13,7 +13,7 @@
 # limitations under the License.
 """Merchant Center product data helpers (strongly typed via Protobuf)."""
 
-from typing import Optional, Dict, Tuple, List, Callable, Any, TypedDict, Iterable
+from typing import Optional, Tuple, List, Callable, Any, TypedDict, Iterable
 from acit.api.v0.storage import schema_pb2
 
 # 1-indexed dimension levels
@@ -75,7 +75,8 @@ def build_campaign(
 
 def _val(obj: Any, key: str, default: Any = None) -> Any:
   """Helper to get a field value from a Protobuf message, handling Enums safely."""
-  # For Protobuf messages, check if the field is an enum and convert to its name string
+  # For Protobuf messages, check if the field is an enum and convert to its
+  # name string
   if hasattr(obj, 'DESCRIPTOR'):
     field_desc = obj.DESCRIPTOR.fields_by_name.get(key)
     if field_desc and field_desc.type == field_desc.TYPE_ENUM:
@@ -94,7 +95,8 @@ def _get_attributes(product: schema_pb2.WideProduct) -> Any:
   return product.product.product_attributes
 
 
-def set_product_in_stock(product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
+def set_product_in_stock(
+        product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
   """Sets a key on the composite product status for product availability."""
   import copy
   product_copy = copy.deepcopy(product)
@@ -106,7 +108,8 @@ def set_product_in_stock(product: schema_pb2.WideProduct) -> schema_pb2.WideProd
   return product_copy
 
 
-def set_product_approved(product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
+def set_product_approved(
+        product: schema_pb2.WideProduct) -> schema_pb2.WideProduct:
   """Sets a key depending on whether the offer is approved in all locations."""
   import copy
   product_copy = copy.deepcopy(product)
@@ -121,7 +124,8 @@ def set_product_approved(product: schema_pb2.WideProduct) -> schema_pb2.WideProd
     del product_copy.disapproved_countries[:]
     product_copy.approved_countries.extend(destination.approved_countries)
     product_copy.pending_countries.extend(destination.pending_countries)
-    product_copy.disapproved_countries.extend(destination.disapproved_countries)
+    product_copy.disapproved_countries.extend(
+        destination.disapproved_countries)
     break
   return product_copy
 
@@ -136,8 +140,8 @@ def taxonomy_matches_dimension(
 ) -> bool:
   """Whether the given taxonomy string matches the input dimension.
 
-  Taxonomy strings are used for Google Product Categories and user-provided types.
-  They are of the form "A > B > C".
+  Taxonomy strings are used for Google Product Categories and
+  user-provided types. They are of the form "A > B > C".
 
   This method looks at the expected level of the dimension, and truncates (as
   necessary) the taxonomy string to only that many levels, useful when recursing
@@ -232,7 +236,8 @@ def dimension_matches_product(
         == channel.lower()
     )
   if 'productChannelExclusivity' in dimension:
-    # Google API Product does not expose channel exclusivity anymore, assume MULTI_CHANNEL.
+    # Google API Product does not expose channel exclusivity anymore, assume
+    # MULTI_CHANNEL.
     return (
         dimension['productChannelExclusivity']['channelExclusivity'].lower()
         == 'multi_channel'
@@ -300,7 +305,8 @@ class ProductTargetingTree(TypedDict):
   Attributes:
     customer_id: The Customer ID
     campaign_id: The Campaign ID
-    tree_parent_id: For Shopping Campaigns, the ad_group_id; for Performance Max, the asset_group_id.
+    tree_parent_id: For Shopping Campaigns, the ad_group_id;
+    for Performance Max, the asset_group_id.
   """
 
   customer_id: str
@@ -388,7 +394,11 @@ def campaign_matches_product_status(
 ) -> bool:
   # TODO: unit test this
   product = _val(product_status, 'product')
-  account_id = _val(product_status, 'accountId') or _val(product_status, 'account_id')
+  account_id = _val(
+      product_status,
+      'accountId') or _val(
+          product_status,
+          'account_id')
   if campaign['merchant_id'] != account_id:
     return False
   campaign_label = campaign['feed_label'].lower()
@@ -399,7 +409,8 @@ def campaign_matches_product_status(
   if not campaign['enable_local'] and channel == 'local':
     return False
   for dimension in campaign['inventory_filter_dimensions']:
-    if not dimension_matches_product(product_status, dimension, category_names_by_id):
+    if not dimension_matches_product(
+        product_status, dimension, category_names_by_id):
       return False
 
   # Language targeting
@@ -438,9 +449,11 @@ def get_campaign_targeting(
 
   Args:
     product: The product to compare against
-    mechant_to_cids: A lookup table of Merchant Center leaf IDs to Ads Customer IDs
-    cid_to_ad_group_trees: A multimap of cids to the unique listing group tree for each
-      campaign. Works for PMax asset groups as well as Shopping ad groups.
+    mechant_to_cids: A lookup table of Merchant Center
+      leaf IDs to Ads Customer IDs
+    cid_to_ad_group_trees: A multimap of cids to the unique listing group tree
+      for each campaign. Works for PMax asset groups as well
+      as Shopping ad groups.
 
   Returns:
     An iterable Tuple of the product and all trees that match it.

@@ -23,4 +23,4 @@ fi
 
 # TODO: Pass parameter overrides here
 # TODO: Put this config in terraform somehow and reuse
-gcloud run jobs execute ads-oneshop-job-v13 --region "${DATAFLOW_REGION}" --wait
+gcloud run jobs execute ads-oneshop-job --region "${DATAFLOW_REGION}" --wait

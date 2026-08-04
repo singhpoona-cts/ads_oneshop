@@ -93,7 +93,8 @@ class MerchantShippingTest(absltest.TestCase):
                 single_value=ma.Value(flat_rate={
                     'amount_micros': 5_000_000, 'currency_code': 'USD'
                 }),)],)],)
-    flat = _to_dict(settings)['services'][0]['rate_groups'][0]['single_value']['flat_rate']
+    d = _to_dict(settings)
+    flat = d['services'][0]['rate_groups'][0]['single_value']['flat_rate']
     self.assertEqual(int(flat['amount_micros']), 5_000_000)
 
   def test_main_table_cell_flat_rate(self):
@@ -105,7 +106,10 @@ class MerchantShippingTest(absltest.TestCase):
                     ma.Value(flat_rate={
                         'amount_micros': 0, 'currency_code': 'USD'
                     })])],),)],)],)
-    cell = _to_dict(settings)['services'][0]['rate_groups'][0]['main_table']['rows'][0]['cells'][0]
+    d = _to_dict(settings)
+    cell = d['services'][0]['rate_groups'][0]['main_table']['rows'][0][
+        'cells'
+    ][0]
     self.assertEqual(int(cell['flat_rate']['amount_micros']), 0)
 
   def test_metadata_key(self):

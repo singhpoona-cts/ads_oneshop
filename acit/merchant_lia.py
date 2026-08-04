@@ -13,7 +13,8 @@
 # limitations under the License.
 """Merchant Center omnichannel / LIA ingestion via the Merchant API (stable v1).
 
-This replaces the old Content API `liasettings.get` (per account) + `liasettings.list` (MCA roll-down) pulls
+This replaces the old Content API
+`liasettings.get` (per account) + `liasettings.list` (MCA roll-down) pulls
 as part of the Content API -> Merchant API migration.
 
 The Merchant API has no `liasettings` resource: the Local Inventory Ads /
@@ -52,7 +53,9 @@ METADATA_KEY = 'downloaderMetadata'
 _PAGE_SIZE = 250
 
 
-def _list_account_omnichannel(client: ma.OmnichannelSettingsServiceClient, account_id: str) -> List[ma.OmnichannelSetting] | None:
+def _list_account_omnichannel(
+    client: ma.OmnichannelSettingsServiceClient, account_id: str
+) -> List[ma.OmnichannelSetting] | None:
   """Lists v1 omnichannel settings for one account, as native-shape dicts.
 
   Args:
@@ -60,7 +63,7 @@ def _list_account_omnichannel(client: ma.OmnichannelSettingsServiceClient, accou
     account_id: The string or integer ID of the account to query.
 
   Returns:
-    A (possibly empty) list of per-region OmnichannelSetting messages, or None if
+    A list of per-region OmnichannelSetting messages, or None if
     the account is not a valid parent for this method (e.g., an aggregator
     or MCA resulting in PermissionDenied).
   """
@@ -129,7 +132,7 @@ def download_omnichannel_settings(credentials: Any,
 
   total = 0
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids}
+    future_to_id = {ex.submit(_process, aid): aid for aid in account_ids_list}
     for done in futures.as_completed(future_to_id):
       account_id, n = done.result()  # surface exceptions
       total += n
@@ -139,4 +142,4 @@ def download_omnichannel_settings(credentials: Any,
 
   logging.info(
       'Merchant API omnichannel: %d account(s) queried, %d setting(s) total',
-      len(account_ids), total)
+      len(account_ids_list), total)
