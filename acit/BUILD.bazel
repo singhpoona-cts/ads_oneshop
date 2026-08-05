@@ -105,6 +105,7 @@ py_library(
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
+        "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_accounts",
     ],
 )
@@ -128,6 +129,7 @@ py_library(
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
+        "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_products",
     ],
 )
@@ -152,6 +154,7 @@ py_library(
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
+        "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_accounts",
     ],
 )
@@ -226,6 +229,9 @@ py_library(
     name = "product_lib",
     srcs = ["product.py"],
     deps = [
+        # Also supplies the generated `products_common_pb2` / `types_pb2`
+        # modules that product.py imports for the v1 enum constants: they are
+        # in schema.proto's own import closure, so protoc generates them here.
         "//acit/api/v0:schema_py_pb2",
     ],
 )

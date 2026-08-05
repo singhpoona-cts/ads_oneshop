@@ -32,41 +32,42 @@ out, derives the `channel` dimension, and joins Ads targeting.
 
 from concurrent import futures
 import json
-from typing import Any, Iterable, Tuple
+from typing import Iterable, Tuple
 
 from absl import logging
+from acit.utils import METADATA_KEY
 from acit.utils import to_dict as _to_dict
 from etils import epath
+from google.auth import credentials as _credentials
 from google.shopping import merchant_products_v1 as mp
-
-# Key stamped onto every row so the Beam stage knows the source account. Mirrors
-# resource_downloader.METADATA_KEY so downstream code is unchanged.
-METADATA_KEY = 'downloaderMetadata'
 
 _PAGE_SIZE = 250
 
 
-def _list_leaf_products(
+def _list_account_products(
     client: mp.ProductsServiceClient, account_id: str
     ) -> Iterable[mp.Product]:
-  """Yields all v1 products for one leaf account, as native-shape dicts.
+  """Yields all v1 products for one account.
+
+  Yields protobuf messages, not dicts; the caller converts each one via
+  `utils.to_dict` as it streams it to disk.
 
   This is a *generator*, deliberately. The GAPIC pager already fetches pages
-  lazily, so yielding each product as it is converted keeps peak memory at
+  lazily, so yielding each product as it arrives keeps peak memory at
   roughly one product per worker thread. Accumulating into a list instead
   would hold the entire catalog at once -- a large merchant can have millions
-  of products, and with `_MAX_WORKERS` accounts downloading concurrently that
-  is an OOM rather than a slowdown.
+  of products, and with `--mc_max_workers` accounts downloading concurrently
+  that is an OOM rather than a slowdown.
 
   Callers must therefore consume the result exactly once, while streaming it
   to its destination (see `download_products._process`).
 
   Args:
     client: The API client instance used to fetch the product catalog.
-    account_id: The ID of the leaf merchant account.
+    account_id: The ID of the leaf or standalone merchant account.
 
   Yields:
-    Native-shape dicts representing individual v1 products.
+    `Product` messages, one per offer in the account's catalog.
   """
   parent = f'accounts/{account_id}'
   pager = client.list_products(request=mp.ListProductsRequest(
@@ -75,9 +76,9 @@ def _list_leaf_products(
     yield product
 
 
-def download_products(credentials: Any,
+def download_products(credentials: _credentials.Credentials,
                       account_ids: Iterable[str],
-                      mc_path: Any,
+                      mc_path: epath.Path,
                       max_workers: int | None = None) -> None:
   """Downloads products from Merchant API v1 and writes per-account files.
 
@@ -98,14 +99,14 @@ def download_products(credentials: Any,
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
     # Stream page-by-page straight to disk rather than materializing the
-    # account's whole catalog first; `_list_leaf_products`
+    # account's whole catalog first; `_list_account_products`
     # is a generator and must be consumed lazily to keep that guarantee.
     count = 0
     with output_file.open('w') as f:
-      for product in _list_leaf_products(client, account_id):
-        d = _to_dict(product)
-        d[METADATA_KEY] = {'accountId': account_id}
-        f.write(json.dumps(d) + '\n')
+      for product in _list_account_products(client, account_id):
+        row = _to_dict(product)
+        row[METADATA_KEY] = {'accountId': account_id}
+        f.write(json.dumps(row) + '\n')
         count += 1
     return account_id, count
 
@@ -118,4 +119,4 @@ def download_products(credentials: Any,
       logging.info('Wrote %d product(s) for %s', n, account_id)
 
   logging.info('Merchant API products: %d account(s), %d product(s) total',
-               len(account_ids), total)
+               len(account_ids_list), total)

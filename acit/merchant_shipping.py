@@ -38,28 +38,28 @@ MCA<->child relationship from the (already migrated) `accounts` table.
 
 from concurrent import futures
 import json
-from typing import Any, Iterable, Tuple
+from typing import Iterable, Tuple
 
 from absl import logging
+from acit.utils import METADATA_KEY
 from acit.utils import to_dict as _to_dict
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
+from google.auth import credentials as _credentials
 from google.shopping import merchant_accounts_v1 as ma
 
-# Key stamped onto every row so downstream code knows the source account.
-# Mirrors resource_downloader.METADATA_KEY.
-# (account_id is also written at top level.)
-METADATA_KEY = 'downloaderMetadata'
 
-
-def _get_account_shipping(
+def _get_account_shipping_settings(
     client: ma.ShippingSettingsServiceClient, account_id: str
     ) -> ma.ShippingSettings | None:
-  """Fetches v1 shipping settings for one account, as a native-shape dict.
+  """Fetches the v1 shipping settings for one account.
+
+  Returns a protobuf message, not a dict; the caller converts it via
+  `utils.to_dict` on the way to disk.
 
   Args:
     client: The API client instance used to make the request.
-    account_id: The string or integer ID of the account to query.
+    account_id: The ID of the account to query.
 
   Returns:
     A ShippingSettings protobuf message, or None if
@@ -84,9 +84,9 @@ def _get_account_shipping(
 
 
 def download_shipping_settings(
-    credentials: Any,
+    credentials: _credentials.Credentials,
     account_ids: Iterable[str],
-    mc_path: Any, max_workers: int | None = None
+    mc_path: epath.Path, max_workers: int | None = None
     ) -> None:
   """Downloads shipping settings from Merchant API v1, one file per account.
 
@@ -104,7 +104,7 @@ def download_shipping_settings(
   account_ids_list = list(account_ids)
 
   def _process(account_id: str) -> Tuple[str, int]:
-    settings = _get_account_shipping(client, account_id)
+    settings = _get_account_shipping_settings(client, account_id)
     # None (not accessible / no settings) -> write nothing; downstream MEX LEFT
     # JOINs default such accounts to "no account-level shipping".
     if settings is None:
@@ -141,4 +141,4 @@ def download_shipping_settings(
 
   logging.info(
       'Merchant API shipping: %d account(s) queried, %d service(s) total',
-      len(account_ids), total)
+      len(account_ids_list), total)

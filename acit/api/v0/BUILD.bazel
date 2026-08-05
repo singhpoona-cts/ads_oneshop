@@ -27,6 +27,7 @@ proto_library(
       "@protoc_gen_bq_schema//:protos_proto",
       "@googleapis//google/shopping/merchant/products/v1:products_proto",
       "@googleapis//google/shopping/merchant/accounts/v1:accounts_proto",
+      "@googleapis//google/type:datetime_proto",
   ]
 )
 
@@ -59,7 +60,11 @@ run_binary(
         "@googleapis//google/api:http_proto",
         "@googleapis//google/api:launch_stage_proto",
         "@googleapis//google/shopping/type:type_proto",
+        # google.type.TimeZone, used by Account.time_zone
+        "@googleapis//google/type:datetime_proto",
         "@googleapis//google/type:interval_proto",
+        "@googleapis//google/type:phone_number_proto",
+        "@googleapis//google/type:postal_address_proto",
         "@protobuf//:timestamp_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:field_mask_proto",
@@ -67,7 +72,9 @@ run_binary(
     ],
     outs = [
         "storage/Products.schema",
+        "storage/accounts.schema",
         "storage/liasettings.schema",
+        "storage/shippingsettings.schema",
     ],
     args = [
         # alias the plugin because names are hard
@@ -89,6 +96,9 @@ run_binary(
         "$(location @googleapis//google/api:launch_stage_proto):" +
         "$(location @googleapis//google/shopping/type:type_proto):" +
         "$(location @googleapis//google/type:interval_proto):" +
+        "$(location @googleapis//google/type:datetime_proto):" +
+        "$(location @googleapis//google/type:phone_number_proto):" +
+        "$(location @googleapis//google/type:postal_address_proto):" +
         "$(location @protobuf//:timestamp_proto):" +
         "$(location @protobuf//:empty_proto):" +
         "$(location @protobuf//:field_mask_proto):" +

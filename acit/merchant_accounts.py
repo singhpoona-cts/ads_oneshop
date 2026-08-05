@@ -35,10 +35,18 @@ one flat JSON record per account, to
 ``<mc_path>/<account_id>/accounts/rows.jsonlines``.That per-account file
 layout keeps the existing BigQuery glob
 (``merchant_center/*/accounts/rows.jsonlines``) working unchanged.
+
+The row shape is defined once, as ``acit.api.v0.storage.Account`` in
+``schema.proto``, which also generates the BigQuery schema. This module only
+emits the native-shape JSON for it; ``create_base_tables`` parses that JSON into
+the message. Keeping the parse in the Beam worker (as `products` and
+`liasettings` already do) deliberately avoids loading ``schema_pb2`` and the
+GAPIC into the same process -- both declare package
+``google.shopping.merchant.accounts.v1``, and co-loading them makes protobuf
+register conflicting descriptors for the same symbols.
 """
 
 from concurrent import futures
-import dataclasses
 import json
 from typing import Any, Dict
 
@@ -50,7 +58,7 @@ from google.shopping import merchant_accounts_v1 as ma
 
 # AccountService.service_type oneof members (each is an
 # empty message in the API); we flatten the set oneof to a STRING
-# `service_type` for BigQuery.
+# `service_type` for BigQuery. See `AccountServiceRow` in schema.proto.
 _SERVICE_TYPE_FIELDS = (
     'products_management',
     'campaigns_management',
@@ -61,75 +69,21 @@ _SERVICE_TYPE_FIELDS = (
 )
 
 
-@dataclasses.dataclass
-class AccountRecord:
-  """Strongly-typed wrapper representing an aggregated Merchant account."""
-  account_id: str
-  account_name: str | None
-  adult_content: bool | None
-  test_account: bool | None
-  time_zone: Any
-  language_code: str | None
-  is_advanced: bool
-  parent_account: str | None
-  homepage: ma.Homepage | None
-  business_info: ma.BusinessInfo | None
-  business_identity: ma.BusinessIdentity | None
-  automatic_improvements: ma.AutomaticImprovements | None
-  users: list[ma.User]
-  account_relationships: list[ma.AccountRelationship]
-  account_services: list[ma.AccountService]
+def _to_service_row(service_msg: ma.AccountService) -> Dict[str, Any]:
+  """Converts one v1 AccountService into an `AccountServiceRow` dict.
 
+  Args:
+    service_msg: The AccountService protobuf message.
 
-def _serialize_record(record: AccountRecord) -> Dict[str, Any]:
-  """Serializes a strongly-typed AccountRecord into the exact BQ schema dict."""
-  homepage_dict = (
-      _to_dict(record.homepage) if record.homepage else None
-  )
-  business_info_dict = (
-      _to_dict(record.business_info) if record.business_info else None
-  )
-  business_identity_dict = (
-      _to_dict(record.business_identity) if record.business_identity else None
-  )
-  automatic_improvements_dict = (
-      _to_dict(record.automatic_improvements)
-      if record.automatic_improvements
-      else None
-  )
-  time_zone_dict = (
-      _to_dict(record.time_zone) if record.time_zone else None
-  )
-
-  users_dicts = [_to_dict(u) for u in record.users]
-  relationships_dicts = [_to_dict(r) for r in record.account_relationships]
-
-  services_dicts = []
-  for svc in record.account_services:
-    d = _to_dict(svc)
-    # Drop the empty oneof messages; expose the set one as `service_type`.
-    for k in _SERVICE_TYPE_FIELDS:
-      d.pop(k, None)
-    d['service_type'] = _service_type(svc)
-    services_dicts.append(d)
-
-  return {
-      'account_id': record.account_id,
-      'account_name': record.account_name,
-      'adult_content': record.adult_content,
-      'test_account': record.test_account,
-      'time_zone': time_zone_dict,
-      'language_code': record.language_code,
-      'is_advanced': record.is_advanced,
-      'parent_account': record.parent_account,
-      'homepage': homepage_dict,
-      'business_info': business_info_dict,
-      'business_identity': business_identity_dict,
-      'automatic_improvements': automatic_improvements_dict,
-      'users': users_dicts,
-      'account_relationships': relationships_dicts,
-      'account_services': services_dicts,
-  }
+  Returns:
+    The native-shape dict with the `service_type` oneof flattened to a string.
+  """
+  row = _to_dict(service_msg)
+  # Drop the empty oneof messages; expose the set one as `service_type`.
+  for field in _SERVICE_TYPE_FIELDS:
+    row.pop(field, None)
+  row['service_type'] = _service_type_name(service_msg)
+  return row
 
 
 class _Clients:
@@ -151,12 +105,13 @@ class _Clients:
         credentials=credentials)
 
 
-def _get_or_none(fn, *, what):
+def _get_or_none(request_fn, *, resource_label):
   """Single-object getter tolerant of common API error states.
 
   Args:
-    fn: A zero-argument callable (e.g., a lambda) that executes an API call.
-    what: A human-readable label string for logging in case of errors.
+    request_fn: A zero-argument callable (e.g., a lambda) that executes an API
+      call.
+    resource_label: A human-readable label for logging in case of errors.
 
   Returns:
     A protobuf message, or None if the request
@@ -164,19 +119,19 @@ def _get_or_none(fn, *, what):
   """
 
   try:
-    return fn()
+    return request_fn()
   except gax_exceptions.NotFound:
-    logging.info('%s: NOT_FOUND', what)
+    logging.info('%s: NOT_FOUND', resource_label)
     return None
   except gax_exceptions.PermissionDenied as e:
-    logging.warning('%s: PERMISSION_DENIED (%s)', what, e.message)
+    logging.warning('%s: PERMISSION_DENIED (%s)', resource_label, e.message)
     return None
   except gax_exceptions.FailedPrecondition as e:
-    logging.warning('%s: FAILED_PRECONDITION (%s)', what, e.message)
+    logging.warning('%s: FAILED_PRECONDITION (%s)', resource_label, e.message)
     return None
 
 
-def _service_type(service_msg) -> str:
+def _service_type_name(service_msg) -> str:
   """Returns the set oneof member name (UPPER) for an AccountService.
 
   Args:
@@ -193,63 +148,84 @@ def _service_type(service_msg) -> str:
   return which.upper() if which else ''
 
 
-def _build_record(clients: _Clients, account_id: str, core: ma.Account,
-                  parent: str | None, is_advanced: bool) -> AccountRecord:
-  """Fans out across v1 sub-resources to build one flat native-shape record.
+def _fetch_account_row(clients: _Clients, account_id: str, core: ma.Account,
+                       parent: str | None,
+                       is_advanced: bool) -> Dict[str, Any]:
+  """Fans out across the v1 sub-resources for one account and flattens them.
+
+  Issues one request per sub-resource (7 in total), so this is I/O-bound; it is
+  called once per account from a thread pool.
+
+  The result is the JSON form of `acit.api.v0.storage.Account`; keys are
+  snake_case and enums are name strings, matching every other Merchant API
+  writer in this package. `None` is preserved for sub-resources the API did not
+  return, so a genuinely absent resource stays distinguishable from one that
+  came back empty.
 
   Args:
     clients: The `_Clients` object containing initialized API
     client connections.
     account_id: The Merchant Center account ID as a string.
     core: An Account protobuf message containing core Account information.
-    parent: The parent account ID string, or an empty string if top-level.
+    parent: The parent (aggregator) account ID, or None if this account is
+      standalone or is itself an aggregator. Distinct from the `parent` field of
+      the v1 list requests below, which takes this account's resource name.
     is_advanced: Whether the account is an advanced/MCA account.
 
   Returns:
-    An AccountRecord dataclass representing the aggregated native v1 account.
+    One `accounts` table row, as a native-shape dict.
   """
 
-  name = clients.accounts.account_path(account_id)  # "accounts/{id}"
+  # "accounts/{id}". The v1 list methods take this as their `parent`.
+  account_resource_name = clients.accounts.account_path(account_id)
 
   services_msgs = list(
       clients.services.list_account_services(
-          ma.ListAccountServicesRequest(parent=name)))
+          ma.ListAccountServicesRequest(parent=account_resource_name)))
 
-  return AccountRecord(
-      account_id=account_id,
-      account_name=core.account_name,
-      adult_content=core.adult_content,
-      test_account=core.test_account,
-      time_zone=core.time_zone,
-      language_code=core.language_code,
-      is_advanced=is_advanced,
-      parent_account=parent,
-      homepage=_get_or_none(
-          lambda: clients.homepage.get_homepage(
-              name=clients.homepage.homepage_path(account_id)),
-          what=f'homepage:{account_id}'),
-      business_info=_get_or_none(
-          lambda: clients.business_info.get_business_info(
-              name=clients.business_info.business_info_path(account_id)),
-          what=f'business_info:{account_id}'),
-      business_identity=_get_or_none(
-          lambda: clients.business_identity.get_business_identity(
-              name=clients.business_identity.business_identity_path(
-                  account_id)),
-          what=f'business_identity:{account_id}'),
-      automatic_improvements=_get_or_none(
-          lambda: clients.automatic_improvements.get_automatic_improvements(
-              name=clients.automatic_improvements.
-              automatic_improvements_path(account_id)),
-          what=f'automatic_improvements:{account_id}'),
-      users=list(
-          clients.users.list_users(
-              ma.ListUsersRequest(parent=name))),
-      account_relationships=list(
-          clients.relationships.list_account_relationships(
-              ma.ListAccountRelationshipsRequest(parent=name))),
-      account_services=services_msgs,
-  )
+  homepage = _get_or_none(
+      lambda: clients.homepage.get_homepage(
+          name=clients.homepage.homepage_path(account_id)),
+      resource_label=f'homepage:{account_id}')
+  business_info = _get_or_none(
+      lambda: clients.business_info.get_business_info(
+          name=clients.business_info.business_info_path(account_id)),
+      resource_label=f'business_info:{account_id}')
+  business_identity = _get_or_none(
+      lambda: clients.business_identity.get_business_identity(
+          name=clients.business_identity.business_identity_path(account_id)),
+      resource_label=f'business_identity:{account_id}')
+  automatic_improvements = _get_or_none(
+      lambda: clients.automatic_improvements.get_automatic_improvements(
+          name=clients.automatic_improvements.automatic_improvements_path(
+              account_id)),
+      resource_label=f'automatic_improvements:{account_id}')
+
+  return {
+      'account_id': int(account_id),
+      'account_name': core.account_name,
+      'adult_content': core.adult_content,
+      'test_account': core.test_account,
+      'time_zone': _to_dict(core.time_zone),
+      'language_code': core.language_code,
+      'is_advanced': is_advanced,
+      'parent_account': int(parent) if parent is not None else None,
+      'homepage': _to_dict(homepage),
+      'business_info': _to_dict(business_info),
+      'business_identity': _to_dict(business_identity),
+      'automatic_improvements': _to_dict(automatic_improvements),
+      'users': [
+          _to_dict(u) for u in clients.users.list_users(
+              ma.ListUsersRequest(parent=account_resource_name))
+      ],
+      'account_relationships': [
+          _to_dict(r)
+          for r in clients.relationships.list_account_relationships(
+              ma.ListAccountRelationshipsRequest(
+                  parent=account_resource_name))
+      ],
+      'account_services': [_to_service_row(s) for s in services_msgs],
+  }
 
 
 def discover_topology(clients: _Clients, input_ids):
@@ -334,14 +310,13 @@ def download_accounts(credentials,
   def _process(account_id):
     parent = leaf_to_parent.get(account_id)
     is_advanced = account_id in aggregator_ids
-    record = _build_record(clients, account_id, cores[account_id], parent,
-                           is_advanced)
-    serialized = _serialize_record(record)
+    record = _fetch_account_row(clients, account_id, cores[account_id], parent,
+                                is_advanced)
     output_file = (epath.Path(mc_path) / account_id / 'accounts' /
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w') as f:
-      f.write(json.dumps(serialized) + '\n')
+      f.write(json.dumps(record) + '\n')
     return account_id
 
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
