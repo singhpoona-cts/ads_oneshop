@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
 filegroup(
     name = "sql",
     srcs = glob(["*.sql"]),
@@ -26,13 +28,13 @@ sh_binary(
     ],
     data = [
         ":sql",
-        "//benchmark:benchmark_values.csv",
         "//benchmark:benchmark_details.csv",
+        "//benchmark:benchmark_values.csv",
     ],
     use_bash_launcher = True,
+    visibility = ["//acit:__subpackages__"],
     deps = [
         "//acit:bq_lib",
         "@bazel_tools//tools/bash/runfiles",
     ],
-    visibility = ["//acit:__subpackages__"],
 )
