@@ -22,10 +22,7 @@ from absl.testing import flagsaver
 from acit.registration import register_gcp
 from etils import epath
 from google.auth import credentials
-from google.shopping.merchant_accounts_v1 import (
-    DeveloperRegistrationServiceClient,
-    RegisterGcpRequest,
-)
+from google.shopping import merchant_accounts_v1
 
 
 class RegisterGcpTest(absltest.TestCase):
@@ -105,7 +102,8 @@ class RegisterGcpTest(absltest.TestCase):
     self.assertEqual(creds, mock_creds)
     mock_auth_default.assert_called_once()
 
-  @mock.patch.object(DeveloperRegistrationServiceClient, 'register_gcp')
+  @mock.patch.object(merchant_accounts_v1.DeveloperRegistrationServiceClient,
+                     'register_gcp')
   def test_register_gcp_project_success(self, mock_register_gcp):
     """Verifies the GCP project is registered correctly via the API client."""
 
@@ -119,7 +117,7 @@ class RegisterGcpTest(absltest.TestCase):
 
     register_gcp.register_gcp_project(account_id, developer_email, mock_creds)
 
-    expected_request = RegisterGcpRequest(
+    expected_request = merchant_accounts_v1.RegisterGcpRequest(
         name=f'accounts/{account_id}/developerRegistration',
         developer_email=developer_email,
     )

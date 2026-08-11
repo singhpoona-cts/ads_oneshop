@@ -39,11 +39,16 @@ layout keeps the existing BigQuery glob
 The row shape is defined once, as ``acit.api.v0.storage.Account`` in
 ``schema.proto``, which also generates the BigQuery schema. This module only
 emits the native-shape JSON for it; ``create_base_tables`` parses that JSON into
-the message. Keeping the parse in the Beam worker (as `products` and
-`liasettings` already do) deliberately avoids loading ``schema_pb2`` and the
-GAPIC into the same process -- both declare package
-``google.shopping.merchant.accounts.v1``, and co-loading them makes protobuf
-register conflicting descriptors for the same symbols.
+the message.
+
+The parse deliberately happens in the Beam worker (as `products` and
+`liasettings` already do), because ``schema_pb2`` cannot be imported alongside
+the Merchant API client. ``schema.proto`` itself declares package
+``acit.api.v0.storage``, but imports the googleapis ``accounts/v1`` protos, so
+``py_proto_library`` generates their ``*_pb2`` modules alongside it -- and those
+declare ``google.shopping.merchant.accounts.v1``, the same package the client
+registers from its own file paths. Importing both raises ``TypeError: Couldn't
+build proto file into descriptor pool`` (``Homepage`` already defined).
 """
 
 from concurrent import futures

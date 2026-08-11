@@ -28,9 +28,7 @@ from etils import epath
 from google import auth
 from google.auth import credentials
 from google.oauth2 import credentials as oauth_credentials
-from google.shopping.merchant_accounts_v1 import (
-    DeveloperRegistrationServiceClient,
-    RegisterGcpRequest)
+from google.shopping import merchant_accounts_v1
 
 
 _OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
@@ -107,8 +105,9 @@ def register_gcp_project(
       account_id,
       developer_email,
   )
-  client = DeveloperRegistrationServiceClient(credentials=creds)
-  request = RegisterGcpRequest(
+  client = merchant_accounts_v1.DeveloperRegistrationServiceClient(
+      credentials=creds)
+  request = merchant_accounts_v1.RegisterGcpRequest(
       name=f'accounts/{account_id}/developerRegistration',
       developer_email=developer_email,
   )

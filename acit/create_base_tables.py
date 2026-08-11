@@ -99,9 +99,10 @@ def combine_campaign_settings(
   Returns:
     A combined campaign settings PCollection.
   """
-
+  # pylint: disable=g-bad-todo
   # TODO: https://github.com/apache/beam/issues/20825
   # Remove pyright ignore annotation.
+  # pylint: enable=g-bad-todo
   return (  # pyright: ignore [reportReturnType]
       {
           'campaigns':
@@ -215,9 +216,12 @@ def main(argv):
       `merchant_accounts.download_accounts` writes the native v1 shape; the row
       layout is defined once as `schema_pb2.Account`, which also generates the
       BigQuery schema. Parsing here rather than in the downloader keeps
-      `schema_pb2` out of the process that loads the Merchant API GAPIC -- both
-      declare package `google.shopping.merchant.accounts.v1`, so co-loading them
-      makes protobuf register conflicting descriptors for the same symbols.
+      `schema_pb2` out of the process that loads the Merchant API client:
+      `schema.proto` imports the googleapis `accounts/v1` protos, so their
+      generated `*_pb2` modules declare
+      `google.shopping.merchant.accounts.v1` -- the same package the client
+      registers from its own file paths -- and importing both raises
+      `TypeError` from the descriptor pool.
 
       `ignore_unknown_fields` drops any not-yet-modeled v1 attribute instead of
       failing the parse.

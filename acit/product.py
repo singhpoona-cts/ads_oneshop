@@ -408,8 +408,7 @@ def campaign_matches_product_status(
     category_names_by_id: dict[str, str],
     language_codes_by_resource_name: dict[str, str],
 ) -> bool:
-    """Whether a campaign's account, feed, channel and language gates admit this
-    product.
+    """Determines if a campaign's targeting criteria admit the given product.
 
     Args:
       campaign: The campaign whose targeting settings to test.
@@ -422,40 +421,40 @@ def campaign_matches_product_status(
       Whether the campaign could target this product at all.
     """
 
-  product = product_status.product
-  if campaign['merchant_id'] != product_status.account_id:
-    return False
-  campaign_label = campaign['feed_label'].lower()
-  if campaign_label and campaign_label != product.feed_label.lower():
-    return False
-  if not campaign['enable_local'] and product_status.channel == 'local':
-    return False
-  for dimension in campaign['inventory_filter_dimensions']:
-    if not dimension_matches_product(
-        product_status, dimension, category_names_by_id):
+    product = product_status.product
+    if campaign['merchant_id'] != product_status.account_id:
       return False
+    campaign_label = campaign['feed_label'].lower()
+    if campaign_label and campaign_label != product.feed_label.lower():
+      return False
+    if not campaign['enable_local'] and product_status.channel == 'local':
+      return False
+    for dimension in campaign['inventory_filter_dimensions']:
+      if not dimension_matches_product(
+          product_status, dimension, category_names_by_id):
+        return False
 
-  # Language targeting
-  positive_languages = [
-      language_codes_by_resource_name[lang['language']]
-      for lang in campaign['languages']
-      if lang['is_targeted']
-  ]
-  negative_languages = [
-      language_codes_by_resource_name[lang['language']]
-      for lang in campaign['languages']
-      if not lang['is_targeted']
-  ]
+    # Language targeting
+    positive_languages = [
+        language_codes_by_resource_name[lang['language']]
+        for lang in campaign['languages']
+        if lang['is_targeted']
+    ]
+    negative_languages = [
+        language_codes_by_resource_name[lang['language']]
+        for lang in campaign['languages']
+        if not lang['is_targeted']
+    ]
 
-  content_language = product.content_language
-  if (
-      positive_languages
-      and content_language not in positive_languages
-  ):
-    return False
-  if content_language in negative_languages:
-    return False
-  return True
+    content_language = product.content_language
+    if (
+        positive_languages
+        and content_language not in positive_languages
+    ):
+      return False
+    if content_language in negative_languages:
+      return False
+    return True
 
 
 def get_campaign_targeting(
