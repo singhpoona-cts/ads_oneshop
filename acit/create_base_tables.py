@@ -26,28 +26,24 @@ Aggregates the following data:
    - The advertising performance of those products
 """
 
-from absl import app
-from absl import flags
-
 import copy
 import json
-
 from typing import Any
 
+from absl import app
+from absl import flags
 from acit import performance_max
-from acit import shopping
 from acit import product
-from acit.utils import METADATA_KEY
+from acit import shopping
 from acit.api.v0.storage import schema_pb2
-
-from google.protobuf import json_format
-
+from acit.utils import METADATA_KEY
 import apache_beam as beam
 from apache_beam import pipeline
-from apache_beam.io import textio
-from apache_beam.io import fileio
-from apache_beam.options import pipeline_options
 from apache_beam import pvalue
+from apache_beam.io import fileio
+from apache_beam.io import textio
+from apache_beam.options import pipeline_options
+from google.protobuf import json_format
 
 # Omit variable declaration so we can pickle __main__.
 flags.DEFINE_string(

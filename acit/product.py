@@ -408,22 +408,20 @@ def campaign_matches_product_status(
     category_names_by_id: dict[str, str],
     language_codes_by_resource_name: dict[str, str],
 ) -> bool:
-  """Whether a campaign's account, feed, channel and language gates admit this
-  product.
+    """Whether a campaign's account, feed, channel and language gates admit this
+    product.
 
-  This is the coarse gate applied before descending a listing group tree.
+    Args:
+      campaign: The campaign whose targeting settings to test.
+      product_status: The wide product record to test.
+      category_names_by_id: Google product category ID to US English name.
+      language_codes_by_resource_name: Ads language resource name to language
+        code.
 
-  Args:
-    campaign: The campaign whose targeting settings to test.
-    product_status: The wide product record to test.
-    category_names_by_id: Google product category ID to US English name.
-    language_codes_by_resource_name: Ads language resource name to language
-      code.
+    Returns:
+      Whether the campaign could target this product at all.
+    """
 
-  Returns:
-    Whether the campaign could target this product at all.
-  """
-  # TODO: unit test this
   product = product_status.product
   if campaign['merchant_id'] != product_status.account_id:
     return False
