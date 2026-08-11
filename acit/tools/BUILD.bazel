@@ -20,9 +20,10 @@ py_library(
   name = "generate_test_data_lib",
   srcs = ["generate_test_data.py"],
   deps = [
+      "//acit:constants_lib",
       "@acit_deps//absl_py",
       "@acit_deps//google_ads",
-  ]
+  ],
 )
 
 py_binary(

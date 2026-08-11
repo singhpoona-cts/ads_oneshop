@@ -22,17 +22,16 @@ load("@rules_shell//shell:sh_library.bzl", "sh_library")
 package(default_visibility = ["//:__pkg__"])
 
 py_library(
-    name = "utils_lib",
-    srcs = ["utils.py"],
-    deps = [
-        "@acit_deps//protobuf",
-    ],
+    name = "constants_lib",
+    srcs = ["constants.py"],
+    visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "resource_downloader_lib",
     srcs = ["resource_downloader.py"],
     deps = [
+        ":constants_lib",
         "@acit_deps//absl_py",
         "@acit_deps//google_api_python_client",
         "@acit_deps//google_auth",
@@ -79,11 +78,13 @@ py_library(
     name = "merchant_accounts_lib",
     srcs = ["merchant_accounts.py"],
     deps = [
-        ":utils_lib",
+        ":constants_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
         "@acit_deps//google_shopping_merchant_accounts",
+        "@acit_deps//protobuf",
     ],
 )
 
@@ -93,6 +94,7 @@ py_test(
     main = "tests/test_merchant_accounts.py",
     deps = [
         ":merchant_accounts_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//google_shopping_merchant_accounts",
     ],
@@ -102,12 +104,14 @@ py_library(
     name = "merchant_lia_lib",
     srcs = ["merchant_lia.py"],
     deps = [
-        ":utils_lib",
+        ":constants_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
         "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_accounts",
+        "@acit_deps//protobuf",
     ],
 )
 
@@ -126,12 +130,13 @@ py_library(
     name = "merchant_products_lib",
     srcs = ["merchant_products.py"],
     deps = [
-        ":utils_lib",
+        ":constants_lib",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
         "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_products",
+        "@acit_deps//protobuf",
     ],
 )
 
@@ -151,12 +156,14 @@ py_library(
     name = "merchant_shipping_lib",
     srcs = ["merchant_shipping.py"],
     deps = [
-        ":utils_lib",
+        ":constants_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//etils",
         "@acit_deps//google_api_core",
         "@acit_deps//google_auth",
         "@acit_deps//google_shopping_merchant_accounts",
+        "@acit_deps//protobuf",
     ],
 )
 
@@ -166,6 +173,7 @@ py_test(
     main = "tests/test_merchant_shipping.py",
     deps = [
         ":merchant_shipping_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//google_shopping_merchant_accounts",
     ],
@@ -230,10 +238,9 @@ py_library(
     name = "product_lib",
     srcs = ["product.py"],
     deps = [
-        # Also supplies the generated `products_common_pb2` / `types_pb2`
-        # modules that product.py imports for the v1 enum constants: they are
-        # in schema.proto's own import closure, so protoc generates them here.
         "//acit/api/v0:schema_py_pb2",
+        "@acit_deps//google_shopping_merchant_products",
+        "@acit_deps//google_shopping_type",
     ],
 )
 
@@ -243,7 +250,11 @@ py_test(
     main = "tests/test_product.py",
     deps = [
         ":product_lib",
+        "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
+        "@acit_deps//google_shopping_merchant_products",
+        "@acit_deps//google_shopping_type",
+        "@acit_deps//protobuf",
     ],
 )
 
@@ -342,7 +353,7 @@ py_library(
         ":performance_max_lib",
         ":product_lib",
         ":shopping_lib",
-        ":utils_lib",
+        ":constants_lib",
         "//acit/api/v0:schema_py_pb2",
         "@acit_deps//absl_py",
         "@acit_deps//apache_beam",

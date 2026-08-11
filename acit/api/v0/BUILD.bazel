@@ -12,30 +12,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-proto_library(
-  name = "schema_proto",
-  srcs = [
-      "storage/schema.proto"
-  ],
-  deps = [
-      "@protoc_gen_bq_schema//:protos_proto",
-      "@googleapis//google/shopping/merchant/products/v1:products_proto",
-      "@googleapis//google/shopping/merchant/accounts/v1:accounts_proto",
-      "@googleapis//google/type:datetime_proto",
-  ]
+py_proto_library(
+    name = "bq_schema_py_pb2",
+    deps = ["@protoc_gen_bq_schema//:protos_proto"],
 )
 
-py_proto_library(
-  name = "schema_py_pb2",
-  deps = [
-      ":schema_proto",
-  ]
+genrule(
+    name = "schema_pb2_gen",
+    srcs = [
+        "storage/schema.proto",
+        "@protoc_gen_bq_schema//:protos_proto",
+        "@protobuf//:descriptor_proto",
+        "//build:merchant_api.descriptor_set",
+    ],
+    outs = [
+        "storage/schema_pb2.py",
+    ],
+    cmd = """
+        $(location //build:gapic_py_pb2_generator) \
+            --protoc=$(location @toolchains_protoc_hub.linux_x86_64//:bin/protoc) \
+            --proto_path=acit/api/v0 \
+            --descriptor_set_in=$(location @protoc_gen_bq_schema//:protos_proto):$(location @protobuf//:descriptor_proto):$(location //build:merchant_api.descriptor_set) \
+            --proto_file=$(location storage/schema.proto) \
+            --out_dir=$(RULEDIR) \
+            --target_py=$(location storage/schema_pb2.py) \
+            --gapic_packages=google.shopping.merchant_accounts_v1,google.shopping.merchant_products_v1,google.shopping.type \
+            --gapic_prefixes=google.shopping.,google.type.
+    """,
+    tools = [
+        "//build:gapic_py_pb2_generator",
+        "@toolchains_protoc_hub.linux_x86_64//:bin/protoc",
+    ],
+)
+
+py_library(
+    name = "schema_py_pb2",
+    srcs = [":schema_pb2_gen"],
+    deps = [
+        ":bq_schema_py_pb2",
+        "@acit_deps//google_shopping_merchant_accounts",
+        "@acit_deps//google_shopping_merchant_products",
+        "@acit_deps//google_shopping_type",
+        "@acit_deps//protobuf",
+    ],
 )
 
 run_binary(
@@ -46,29 +70,10 @@ run_binary(
         # We can't use -I, so we have to pass these instead
         "@protoc_gen_bq_schema//:protos_proto",
         "@protobuf//:descriptor_proto",
-        ":schema_proto",
         # The file we actually want to process
         ":storage/schema.proto",
-        # Google APIs descriptor sets
-        "@googleapis//google/shopping/merchant/products/v1:products_proto",
-        "@googleapis//google/shopping/merchant/accounts/v1:accounts_proto",
-        # Transitive dependencies of Google APIs
-        "@googleapis//google/api:annotations_proto",
-        "@googleapis//google/api:client_proto",
-        "@googleapis//google/api:field_behavior_proto",
-        "@googleapis//google/api:resource_proto",
-        "@googleapis//google/api:http_proto",
-        "@googleapis//google/api:launch_stage_proto",
-        "@googleapis//google/shopping/type:type_proto",
-        # google.type.TimeZone, used by Account.time_zone
-        "@googleapis//google/type:datetime_proto",
-        "@googleapis//google/type:interval_proto",
-        "@googleapis//google/type:phone_number_proto",
-        "@googleapis//google/type:postal_address_proto",
-        "@protobuf//:timestamp_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:field_mask_proto",
-        "@protobuf//:duration_proto",
+        # Extracted Google APIs descriptor set from GAPIC
+        "//build:merchant_api.descriptor_set",
     ],
     outs = [
         "storage/Products.schema",
@@ -82,28 +87,12 @@ run_binary(
         # magic output directory string
         "--bq-schema_out=bazel-out/k8-fastbuild/bin/",
         "--bq-schema_opt=enum-as-string",
+        "--proto_path=acit/api/v0",
         "--descriptor_set_in=" +
         "$(location @protoc_gen_bq_schema//:protos_proto):" +
-        "$(location //acit/api/v0:schema_proto):" +
         "$(location @protobuf//:descriptor_proto):" +
-        "$(location @googleapis//google/shopping/merchant/products/v1:products_proto):" +
-        "$(location @googleapis//google/shopping/merchant/accounts/v1:accounts_proto):" +
-        "$(location @googleapis//google/api:annotations_proto):" +
-        "$(location @googleapis//google/api:client_proto):" +
-        "$(location @googleapis//google/api:field_behavior_proto):" +
-        "$(location @googleapis//google/api:resource_proto):" +
-        "$(location @googleapis//google/api:http_proto):" +
-        "$(location @googleapis//google/api:launch_stage_proto):" +
-        "$(location @googleapis//google/shopping/type:type_proto):" +
-        "$(location @googleapis//google/type:interval_proto):" +
-        "$(location @googleapis//google/type:datetime_proto):" +
-        "$(location @googleapis//google/type:phone_number_proto):" +
-        "$(location @googleapis//google/type:postal_address_proto):" +
-        "$(location @protobuf//:timestamp_proto):" +
-        "$(location @protobuf//:empty_proto):" +
-        "$(location @protobuf//:field_mask_proto):" +
-        "$(location @protobuf//:duration_proto)",
-        "$(location :storage/schema.proto)"
+        "$(location //build:merchant_api.descriptor_set)",
+        "$(location :storage/schema.proto)",
     ],
     # Reuse the existing precompiled protoc
     tool = "@toolchains_protoc_hub.linux_x86_64//:bin/protoc",

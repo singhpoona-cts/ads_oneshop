@@ -38,6 +38,8 @@ import enum
 
 from google.ads.googleads.v22.services.types import google_ads_service
 
+from acit.constants import METADATA_KEY
+
 import sys
 
 from typing import Set, Sequence, Any, Optional, Iterable
@@ -373,7 +375,7 @@ class Generator:
                 'name': 'placeholder custom attribute name',
                 'value': 'placeholder custom attribute value',
             }],
-            'downloaderMetadata': {'accountId': merchant_id},
+            METADATA_KEY: {'accountId': merchant_id},
         }
         for i, label in enumerate(labels):
           row[f'customLabel{i}'] = label
@@ -419,7 +421,7 @@ class Generator:
             'creationDate': '2020-12-20T20:08:20Z',
             'lastUpdateDate': '2020-12-20T20:08:20Z',
             'googleExpirationDate': '2022-12-20T20:08:20Z',
-            'downloaderMetadata': {'accountId': merchant_id},
+            METADATA_KEY: {'accountId': merchant_id},
         }
         yield row
 

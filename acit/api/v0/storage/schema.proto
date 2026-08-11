@@ -17,17 +17,17 @@ syntax = "proto3";
 package acit.api.v0.storage;
 
 import "bq_table.proto";
-import "google/shopping/merchant/products/v1/products.proto";
-import "google/shopping/merchant/products/v1/products_common.proto";
-import "google/shopping/merchant/accounts/v1/accountrelationships.proto";
-import "google/shopping/merchant/accounts/v1/accountservices.proto";
-import "google/shopping/merchant/accounts/v1/automaticimprovements.proto";
-import "google/shopping/merchant/accounts/v1/businessidentity.proto";
-import "google/shopping/merchant/accounts/v1/businessinfo.proto";
-import "google/shopping/merchant/accounts/v1/homepage.proto";
-import "google/shopping/merchant/accounts/v1/omnichannelsettings.proto";
-import "google/shopping/merchant/accounts/v1/shippingsettings.proto";
-import "google/shopping/merchant/accounts/v1/user.proto";
+import "google/shopping/merchant_products_v1/types/products.proto";
+import "google/shopping/merchant_products_v1/types/products_common.proto";
+import "google/shopping/merchant_accounts_v1/types/accountrelationships.proto";
+import "google/shopping/merchant_accounts_v1/types/accountservices.proto";
+import "google/shopping/merchant_accounts_v1/types/automaticimprovements.proto";
+import "google/shopping/merchant_accounts_v1/types/businessidentity.proto";
+import "google/shopping/merchant_accounts_v1/types/businessinfo.proto";
+import "google/shopping/merchant_accounts_v1/types/homepage.proto";
+import "google/shopping/merchant_accounts_v1/types/omnichannelsettings.proto";
+import "google/shopping/merchant_accounts_v1/types/shippingsettings.proto";
+import "google/shopping/merchant_accounts_v1/types/user.proto";
 import "google/type/datetime.proto";
 
 message WideProduct {

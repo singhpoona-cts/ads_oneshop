@@ -40,11 +40,12 @@ import json
 from typing import Iterable, List, Tuple
 
 from absl import logging
-from acit.utils import METADATA_KEY
-from acit.utils import to_dict as _to_dict
+from acit.api.v0.storage import schema_pb2
+from acit.constants import METADATA_KEY
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
 from google.auth import credentials as _credentials
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 _PAGE_SIZE = 250
@@ -55,8 +56,8 @@ def _list_account_omnichannel_settings(
 ) -> List[ma.OmnichannelSetting] | None:
   """Lists the v1 omnichannel settings for one account.
 
-  Returns protobuf messages, not dicts; the caller converts them via
-  `utils.to_dict` on the way to disk.
+  Returns protobuf messages, not dicts; the caller wraps them in
+  `schema_pb2.OmnichannelLiaSettings` on the way to disk.
 
   Args:
     client: The API client instance used to make the request.
@@ -114,16 +115,18 @@ def download_omnichannel_settings(
     # LEFT JOINs default such accounts to "not implemented".
     if not settings:
       return account_id, 0
-    serialized_rows = [
-        _to_dict(s) for s in settings
-    ]
-    record = {
-        'account_id': int(account_id),
-        'omnichannel_settings': serialized_rows,
-        METADATA_KEY: {
-            'accountId': account_id
-        },
-    }
+    msg = schema_pb2.OmnichannelLiaSettings()
+    msg.account_id = int(account_id)
+    for s in settings:
+      msg.omnichannel_settings.add().CopyFrom(ma.OmnichannelSetting.pb(s))
+
+    record = json_format.MessageToDict(
+        msg,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
+    record[METADATA_KEY] = {'accountId': account_id}
+
     output_file = (epath.Path(mc_path) / account_id / 'liasettings' /
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)

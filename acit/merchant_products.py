@@ -35,10 +35,10 @@ import json
 from typing import Iterable, Tuple
 
 from absl import logging
-from acit.utils import METADATA_KEY
-from acit.utils import to_dict as _to_dict
+from acit.constants import METADATA_KEY
 from etils import epath
 from google.auth import credentials as _credentials
+from google.protobuf import json_format
 from google.shopping import merchant_products_v1 as mp
 
 _PAGE_SIZE = 250
@@ -49,8 +49,8 @@ def _list_account_products(
     ) -> Iterable[mp.Product]:
   """Yields all v1 products for one account.
 
-  Yields protobuf messages, not dicts; the caller converts each one via
-  `utils.to_dict` as it streams it to disk.
+  Yields protobuf messages, not dicts; the caller serializes them
+  as it streams them to disk.
 
   This is a *generator*, deliberately. The GAPIC pager already fetches pages
   lazily, so yielding each product as it arrives keeps peak memory at
@@ -104,7 +104,11 @@ def download_products(credentials: _credentials.Credentials,
     count = 0
     with output_file.open('w') as f:
       for product in _list_account_products(client, account_id):
-        row = _to_dict(product)
+        row = json_format.MessageToDict(
+            mp.Product.pb(product),
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+        )
         row[METADATA_KEY] = {'accountId': account_id}
         f.write(json.dumps(row) + '\n')
         count += 1

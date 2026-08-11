@@ -36,7 +36,7 @@ from acit import performance_max
 from acit import product
 from acit import shopping
 from acit.api.v0.storage import schema_pb2
-from acit.utils import METADATA_KEY
+from acit.constants import METADATA_KEY
 import apache_beam as beam
 from apache_beam import pipeline
 from apache_beam import pvalue
@@ -195,12 +195,8 @@ def main(argv):
 
     def convert_lia_settings(row):
       # Native Merchant API v1 omnichannel settings.
-      # `merchant_lia` writes one FLAT record per account --
-      #   {"account_id": <int>, "omnichannel_settings":
-      # [<OmnichannelSetting>, ...]}
-      # -- so there is no longer a {settings, children[]}
-      # envelope to disambiguate.`ignore_unknown_fields` drops the stamped
-      # `downloaderMetadata` (and any
+      # `merchant_lia` writes `schema_pb2.OmnichannelLiaSettings` records.
+      # `ignore_unknown_fields` drops the stamped `downloaderMetadata` (and any
       # not-yet-modeled v1 attribute) instead of failing the parse.
       msg = schema_pb2.OmnichannelLiaSettings()
       json_format.ParseDict(row, msg, ignore_unknown_fields=True)
@@ -213,15 +209,9 @@ def main(argv):
     def convert_accounts(row):
       """Parses one aggregated v1 account into the `accounts` table shape.
 
-      `merchant_accounts.download_accounts` writes the native v1 shape; the row
-      layout is defined once as `schema_pb2.Account`, which also generates the
-      BigQuery schema. Parsing here rather than in the downloader keeps
-      `schema_pb2` out of the process that loads the Merchant API client:
-      `schema.proto` imports the googleapis `accounts/v1` protos, so their
-      generated `*_pb2` modules declare
-      `google.shopping.merchant.accounts.v1` -- the same package the client
-      registers from its own file paths -- and importing both raises
-      `TypeError` from the descriptor pool.
+      `merchant_accounts.download_accounts` writes `schema_pb2.Account` records;
+      the row layout is defined as `schema_pb2.Account`, which also generates
+      the BigQuery schema.
 
       `ignore_unknown_fields` drops any not-yet-modeled v1 attribute instead of
       failing the parse.
@@ -260,11 +250,9 @@ def main(argv):
     def convert_shipping_settings(row):
       """Parses one account's v1 shipping settings into the table shape.
 
-      `merchant_shipping.download_shipping_settings` writes the native v1 shape;
-      the row layout is defined once as `schema_pb2.ShippingSettings`, which
-      also generates the BigQuery schema. As with accounts, parsing here rather
-      than in the downloader keeps `schema_pb2` out of the process that loads
-      the Merchant API GAPIC.
+      `merchant_shipping.download_shipping_settings` writes
+      `schema_pb2.ShippingSettings` records; the row layout is defined as
+      `schema_pb2.ShippingSettings`, which also generates the BigQuery schema.
 
       `ignore_unknown_fields` drops the stamped `downloaderMetadata` (and any
       not-yet-modeled v1 attribute) instead of failing the parse.

@@ -17,16 +17,10 @@ import copy
 
 from typing import Optional, Tuple, List, Callable, Any, TypedDict, Iterable
 from acit.api.v0.storage import schema_pb2
-# Enum types for the embedded Merchant API v1 messages. These come from the
-# same generated closure as `schema_pb2` -- which imports both files to resolve
-# its own field types -- so they are importable wherever `schema_pb2` is. Do NOT
-# substitute the pip GAPIC (`google.shopping.merchant_products_v1`): it declares
-# the same package, and co-loading the two makes protobuf register conflicting
-# descriptors for the same symbols.
-from google.shopping.merchant.products.v1 import products_common_pb2
-from google.shopping.type import types_pb2
+from google.shopping import merchant_products_v1 as mp
+from google.shopping import type as gst
 
-_SHOPPING_ADS = types_pb2.ReportingContext.ReportingContextEnum.SHOPPING_ADS
+_SHOPPING_ADS = gst.ReportingContext.ReportingContextEnum.SHOPPING_ADS
 
 # 1-indexed dimension levels
 _PRODUCT_DIMENSION_LEVELS = [
@@ -87,7 +81,7 @@ def build_campaign(
 
 def _get_attributes(
     product: schema_pb2.WideProduct,
-) -> products_common_pb2.ProductAttributes:
+) -> mp.ProductAttributes:
   """Returns the offer attributes embedded in a WideProduct.
 
   Args:
@@ -106,7 +100,7 @@ def set_product_in_stock(
   product_copy = copy.deepcopy(product)
   attributes = _get_attributes(product_copy)
   product_copy.in_stock = (
-      attributes.availability == products_common_pb2.Availability.IN_STOCK)
+      attributes.availability == mp.Availability.IN_STOCK)
   return product_copy
 
 
@@ -255,7 +249,7 @@ def dimension_matches_product(
   if 'productCondition' in dimension:
     # v1 `condition` is an enum NAME string (NEW/USED/REFURBISHED); lower-cased
     # it matches the Ads dimension value (new/used/refurbished).
-    condition = products_common_pb2.Condition.Name(attributes.condition)
+    condition = mp.Condition(attributes.condition).name
     return bool(
         dimension['productCondition']['condition'].lower()
         == condition.lower()

@@ -36,19 +36,10 @@ one flat JSON record per account, to
 layout keeps the existing BigQuery glob
 (``merchant_center/*/accounts/rows.jsonlines``) working unchanged.
 
-The row shape is defined once, as ``acit.api.v0.storage.Account`` in
-``schema.proto``, which also generates the BigQuery schema. This module only
-emits the native-shape JSON for it; ``create_base_tables`` parses that JSON into
-the message.
-
-The parse deliberately happens in the Beam worker (as `products` and
-`liasettings` already do), because ``schema_pb2`` cannot be imported alongside
-the Merchant API client. ``schema.proto`` itself declares package
-``acit.api.v0.storage``, but imports the googleapis ``accounts/v1`` protos, so
-``py_proto_library`` generates their ``*_pb2`` modules alongside it -- and those
-declare ``google.shopping.merchant.accounts.v1``, the same package the client
-registers from its own file paths. Importing both raises ``TypeError: Couldn't
-build proto file into descriptor pool`` (``Homepage`` already defined).
+# The row shape is defined once, as ``acit.api.v0.storage.Account`` in
+# ``schema.proto``, which also generates the BigQuery schema. This module
+# constructs the strongly typed ``Account`` protobuf messages and emits them as
+# JSON for BigQuery ingestion and Beam processing.
 """
 
 from concurrent import futures
@@ -56,9 +47,10 @@ import json
 from typing import Any, Dict
 
 from absl import logging
-from acit.utils import to_dict as _to_dict
+from acit.api.v0.storage import schema_pb2
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 # AccountService.service_type oneof members (each is an
@@ -74,20 +66,33 @@ _SERVICE_TYPE_FIELDS = (
 )
 
 
-def _to_service_row(service_msg: ma.AccountService) -> Dict[str, Any]:
-  """Converts one v1 AccountService into an `AccountServiceRow` dict.
+def _to_service_row(
+    service_msg: ma.AccountService,
+) -> schema_pb2.AccountServiceRow:
+  """Converts one v1 AccountService into an AccountServiceRow proto message.
 
   Args:
     service_msg: The AccountService protobuf message.
 
   Returns:
-    The native-shape dict with the `service_type` oneof flattened to a string.
+    The schema_pb2.AccountServiceRow proto message with the `service_type` oneof
+    flattened to a string.
   """
-  row = _to_dict(service_msg)
-  # Drop the empty oneof messages; expose the set one as `service_type`.
-  for field in _SERVICE_TYPE_FIELDS:
-    row.pop(field, None)
-  row['service_type'] = _service_type_name(service_msg)
+  row = schema_pb2.AccountServiceRow()
+  pb_msg = ma.AccountService.pb(service_msg)
+  if pb_msg.name:
+    row.name = pb_msg.name
+  if pb_msg.provider:
+    row.provider = pb_msg.provider
+  if pb_msg.provider_display_name:
+    row.provider_display_name = pb_msg.provider_display_name
+  if pb_msg.external_account_id:
+    row.external_account_id = pb_msg.external_account_id
+  if pb_msg.mutability:
+    row.mutability = pb_msg.mutability
+  row.service_type = _service_type_name(service_msg)
+  if pb_msg.HasField('handshake'):
+    row.handshake.CopyFrom(pb_msg.handshake)
   return row
 
 
@@ -153,32 +158,29 @@ def _service_type_name(service_msg) -> str:
   return which.upper() if which else ''
 
 
-def _fetch_account_row(clients: _Clients, account_id: str, core: ma.Account,
-                       parent: str | None,
-                       is_advanced: bool) -> Dict[str, Any]:
+def _fetch_account_row(
+    clients: _Clients,
+    account_id: str,
+    core: ma.Account,
+    parent: str | None,
+    is_advanced: bool,
+) -> schema_pb2.Account:
   """Fans out across the v1 sub-resources for one account and flattens them.
 
   Issues one request per sub-resource (7 in total), so this is I/O-bound; it is
   called once per account from a thread pool.
 
-  The result is the JSON form of `acit.api.v0.storage.Account`; keys are
-  snake_case and enums are name strings, matching every other Merchant API
-  writer in this package. `None` is preserved for sub-resources the API did not
-  return, so a genuinely absent resource stays distinguishable from one that
-  came back empty.
-
   Args:
-    clients: The `_Clients` object containing initialized API
-    client connections.
+    clients: The `_Clients` object containing initialized API client
+      connections.
     account_id: The Merchant Center account ID as a string.
     core: An Account protobuf message containing core Account information.
     parent: The parent (aggregator) account ID, or None if this account is
-      standalone or is itself an aggregator. Distinct from the `parent` field of
-      the v1 list requests below, which takes this account's resource name.
+      standalone or is itself an aggregator.
     is_advanced: Whether the account is an advanced/MCA account.
 
   Returns:
-    One `accounts` table row, as a native-shape dict.
+    One `schema_pb2.Account` protobuf message.
   """
 
   # "accounts/{id}". The v1 list methods take this as their `parent`.
@@ -206,31 +208,45 @@ def _fetch_account_row(clients: _Clients, account_id: str, core: ma.Account,
               account_id)),
       resource_label=f'automatic_improvements:{account_id}')
 
-  return {
-      'account_id': int(account_id),
-      'account_name': core.account_name,
-      'adult_content': core.adult_content,
-      'test_account': core.test_account,
-      'time_zone': _to_dict(core.time_zone),
-      'language_code': core.language_code,
-      'is_advanced': is_advanced,
-      'parent_account': int(parent) if parent is not None else None,
-      'homepage': _to_dict(homepage),
-      'business_info': _to_dict(business_info),
-      'business_identity': _to_dict(business_identity),
-      'automatic_improvements': _to_dict(automatic_improvements),
-      'users': [
-          _to_dict(u) for u in clients.users.list_users(
-              ma.ListUsersRequest(parent=account_resource_name))
-      ],
-      'account_relationships': [
-          _to_dict(r)
-          for r in clients.relationships.list_account_relationships(
-              ma.ListAccountRelationshipsRequest(
-                  parent=account_resource_name))
-      ],
-      'account_services': [_to_service_row(s) for s in services_msgs],
-  }
+  account_msg = schema_pb2.Account()
+  account_msg.account_id = int(account_id)
+  if core.account_name:
+    account_msg.account_name = core.account_name
+  account_msg.adult_content = core.adult_content
+  account_msg.test_account = core.test_account
+  if core.time_zone:
+    account_msg.time_zone.CopyFrom(ma.Account.pb(core).time_zone)
+  if core.language_code:
+    account_msg.language_code = core.language_code
+  account_msg.is_advanced = is_advanced
+  if parent is not None:
+    account_msg.parent_account = int(parent)
+
+  if homepage:
+    account_msg.homepage.CopyFrom(ma.Homepage.pb(homepage))
+  if business_info:
+    account_msg.business_info.CopyFrom(ma.BusinessInfo.pb(business_info))
+  if business_identity:
+    account_msg.business_identity.CopyFrom(
+        ma.BusinessIdentity.pb(business_identity))
+  if automatic_improvements:
+    account_msg.automatic_improvements.CopyFrom(
+        ma.AutomaticImprovements.pb(automatic_improvements))
+
+  for u in clients.users.list_users(
+      ma.ListUsersRequest(parent=account_resource_name)):
+    account_msg.users.add().CopyFrom(ma.User.pb(u))
+
+  for r in clients.relationships.list_account_relationships(
+      ma.ListAccountRelationshipsRequest(
+          parent=account_resource_name)):
+    account_msg.account_relationships.add().CopyFrom(
+        ma.AccountRelationship.pb(r))
+
+  for s in services_msgs:
+    account_msg.account_services.append(_to_service_row(s))
+
+  return account_msg
 
 
 def discover_topology(clients: _Clients, input_ids):
@@ -320,8 +336,13 @@ def download_accounts(credentials,
     output_file = (epath.Path(mc_path) / account_id / 'accounts' /
                    'rows.jsonlines')
     output_file.parent.mkdir(parents=True, exist_ok=True)
+    record_dict = json_format.MessageToDict(
+        record,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
     with output_file.open('w') as f:
-      f.write(json.dumps(record) + '\n')
+      f.write(json.dumps(record_dict) + '\n')
     return account_id
 
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:

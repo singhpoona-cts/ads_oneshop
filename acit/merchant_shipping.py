@@ -41,11 +41,12 @@ import json
 from typing import Iterable, Tuple
 
 from absl import logging
-from acit.utils import METADATA_KEY
-from acit.utils import to_dict as _to_dict
+from acit.api.v0.storage import schema_pb2
+from acit.constants import METADATA_KEY
 from etils import epath
 from google.api_core import exceptions as gax_exceptions
 from google.auth import credentials as _credentials
+from google.protobuf import json_format
 from google.shopping import merchant_accounts_v1 as ma
 
 
@@ -54,8 +55,8 @@ def _get_account_shipping_settings(
     ) -> ma.ShippingSettings | None:
   """Fetches the v1 shipping settings for one account.
 
-  Returns a protobuf message, not a dict; the caller converts it via
-  `utils.to_dict` on the way to disk.
+  Returns a protobuf message, not a dict; the caller wraps it in
+  `schema_pb2.ShippingSettings` on the way to disk.
 
   Args:
     client: The API client instance used to make the request.
@@ -109,15 +110,21 @@ def download_shipping_settings(
     # JOINs default such accounts to "no account-level shipping".
     if settings is None:
       return account_id, 0
-    settings_dict = _to_dict(settings)
-    services = settings_dict.get('services', []) or []
-    record = {
-        'account_id': int(account_id),
-        'services': services,
-        'warehouses': settings_dict.get('warehouses', []) or [],
-        'etag': settings_dict.get('etag'),
-        METADATA_KEY: {'accountId': account_id},
-    }
+    pb_settings = ma.ShippingSettings.pb(settings)
+    msg = schema_pb2.ShippingSettings()
+    msg.account_id = int(account_id)
+    if pb_settings.etag:
+      msg.etag = pb_settings.etag
+    msg.services.extend(pb_settings.services)
+    msg.warehouses.extend(pb_settings.warehouses)
+
+    record = json_format.MessageToDict(
+        msg,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
+    record[METADATA_KEY] = {'accountId': account_id}
+
     output_file = (
         epath.Path(mc_path)
         / account_id
@@ -127,7 +134,7 @@ def download_shipping_settings(
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open('w') as f:
       f.write(json.dumps(record) + '\n')
-    return account_id, len(services)
+    return account_id, len(pb_settings.services)
 
   total = 0
   with futures.ThreadPoolExecutor(max_workers=max_workers) as ex:

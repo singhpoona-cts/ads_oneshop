@@ -52,19 +52,16 @@ class MerchantAccountsTest(absltest.TestCase):
     )
     row = merchant_accounts._to_service_row(svc)
 
-    self.assertEqual('ACCOUNT_AGGREGATION', row['service_type'])
-    self.assertEqual('accounts/123/services/456', row['name'])
-    self.assertEqual('accounts/789', row['provider'])
-    self.assertEqual('ext-1', row['external_account_id'])
-    # The empty oneof members must not reach the BigQuery row.
-    for field in merchant_accounts._SERVICE_TYPE_FIELDS:
-      self.assertNotIn(field, row)
+    self.assertEqual('ACCOUNT_AGGREGATION', row.service_type)
+    self.assertEqual('accounts/123/services/456', row.name)
+    self.assertEqual('accounts/789', row.provider)
+    self.assertEqual('ext-1', row.external_account_id)
 
   def test_to_service_row_without_service_type(self):
     """An AccountService with no oneof set yields an empty service_type."""
     row = merchant_accounts._to_service_row(
         ma.AccountService(name='accounts/123/services/456'))
-    self.assertEqual('', row['service_type'])
+    self.assertEqual('', row.service_type)
 
 
 if __name__ == '__main__':
