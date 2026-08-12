@@ -1,569 +1,256 @@
 [
   {
-    "name": "children",
+    "name": "account_id",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "account_name",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "adult_content",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "test_account",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "language_code",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "time_zone",
     "type": "RECORD",
-    "mode": "REPEATED",
+    "mode": "NULLABLE",
     "fields": [
+      { "name": "id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "version", "type": "STRING", "mode": "NULLABLE" }
+    ]
+  },
+  {
+    "name": "is_advanced",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "parent_account",
+    "type": "INTEGER",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "homepage",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "uri", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "claimed", "type": "BOOLEAN", "mode": "NULLABLE" }
+    ]
+  },
+  {
+    "name": "business_info",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "phone_verification_state", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "korean_business_registration_number", "type": "STRING", "mode": "NULLABLE" },
       {
-        "name": "automaticImprovements",
+        "name": "address",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
+          { "name": "revision", "type": "INTEGER", "mode": "NULLABLE" },
+          { "name": "region_code", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "language_code", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "postal_code", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "sorting_code", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "administrative_area", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "locality", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "sublocality", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "address_lines", "type": "STRING", "mode": "REPEATED" },
+          { "name": "recipients", "type": "STRING", "mode": "REPEATED" },
+          { "name": "organization", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      },
+      {
+        "name": "phone",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "e164_number", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "extension", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      },
+      {
+        "name": "customer_service",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "uri", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "email", "type": "STRING", "mode": "NULLABLE" },
           {
-            "name": "shippingImprovements",
+            "name": "phone",
             "type": "RECORD",
             "mode": "NULLABLE",
             "fields": [
-              {
-                "name": "allowShippingImprovements",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              }
-            ]
-          },
-          {
-            "name": "imageImprovements",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "effectiveAllowAutomaticImageImprovements",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              }
-            ]
-          },
-          {
-            "name": "itemUpdates",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "effectiveAllowConditionUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowStrictAvailabilityUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowAvailabilityUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowPriceUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "accountItemUpdatesSettings",
-                "type": "RECORD",
-                "mode": "NULLABLE",
-		"fields": [
-		  {
-                    "name": "allowPriceUpdates",
-		    "type": "BOOLEAN",
-		    "mode": "NULLABLE"
-		  },
-		  {
-                    "name": "allowAvailabilityUpdates",
-		    "type": "BOOLEAN",
-		    "mode": "NULLABLE"
-		  },
-		  {
-                    "name": "allowStrictAvailabilityUpdates",
-		    "type": "BOOLEAN",
-		    "mode": "NULLABLE"
-		  },
-		  {
-                    "name": "allowConditionUpdates",
-		    "type": "BOOLEAN",
-		    "mode": "NULLABLE"
-                  }
-		]
-              }
+              { "name": "e164_number", "type": "STRING", "mode": "NULLABLE" },
+              { "name": "extension", "type": "STRING", "mode": "NULLABLE" }
             ]
           }
         ]
-      },
-      {
-        "name": "businessIdentity",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "includeForPromotions",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "googleMyBusinessLink",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "status",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "gmbEmail",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "gmbAccountId",
-            "type": "FLOAT",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "users",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "reportingManager",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "admin",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "emailAddress",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "downloaderMetadata",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "parentId",
-            "type": "INTEGER",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "conversionSettings",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "freeListingsAutoTaggingEnabled",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "adsLinks",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "status",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "adsId",
-            "type": "INTEGER",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "accountManagement",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "id",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "adultContent",
-        "type": "BOOLEAN",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "websiteUrl",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "businessInformation",
-        "type": "RECORD",
-        "mode": "NULLABLE",
-        "fields": [
-          {
-            "name": "phoneVerificationStatus",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "phoneNumber",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "customerService",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "phoneNumber",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "email",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "url",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              }
-            ]
-          },
-          {
-            "name": "address",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "postalCode",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "region",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "locality",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "country",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "streetAddress",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "name",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "kind",
-        "type": "STRING",
-        "mode": "NULLABLE"
       }
     ]
   },
   {
-    "name": "settings",
+    "name": "business_identity",
     "type": "RECORD",
     "mode": "NULLABLE",
     "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "promotions_consent", "type": "STRING", "mode": "NULLABLE" },
       {
-        "name": "automaticImprovements",
+        "name": "black_owned",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
-          {
-            "name": "shippingImprovements",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "allowShippingImprovements",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              }
-            ]
-          },
-          {
-            "name": "imageImprovements",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "effectiveAllowAutomaticImageImprovements",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "accountImageImprovementsSettings",
-                "type": "RECORD",
-                "mode": "NULLABLE",
-                "fields": [
-                  {
-                    "name": "allowAutomaticImageImprovements",
-                    "type": "BOOLEAN",
-                    "mode": "NULLABLE"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "name": "itemUpdates",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "effectiveAllowConditionUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowStrictAvailabilityUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowPriceUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "effectiveAllowAvailabilityUpdates",
-                "type": "BOOLEAN",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "accountItemUpdatesSettings",
-                "type": "RECORD",
-                "mode": "NULLABLE",
-                "fields": [
-                  {
-                    "name": "allowConditionUpdates",
-                    "type": "BOOLEAN",
-                    "mode": "NULLABLE"
-                  },
-                  {
-                    "name": "allowStrictAvailabilityUpdates",
-                    "type": "BOOLEAN",
-                    "mode": "NULLABLE"
-                  },
-                  {
-                    "name": "allowAvailabilityUpdates",
-                    "type": "BOOLEAN",
-                    "mode": "NULLABLE"
-                  },
-                  {
-                    "name": "allowPriceUpdates",
-                    "type": "BOOLEAN",
-                    "mode": "NULLABLE"
-                  }
-                ]
-              }
-            ]
-          }
+          { "name": "identity_declaration", "type": "STRING", "mode": "NULLABLE" }
         ]
       },
       {
-        "name": "businessIdentity",
+        "name": "women_owned",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
-          {
-            "name": "includeForPromotions",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          }
+          { "name": "identity_declaration", "type": "STRING", "mode": "NULLABLE" }
         ]
       },
       {
-        "name": "googleMyBusinessLink",
+        "name": "veteran_owned",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
-          {
-            "name": "status",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "gmbEmail",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "gmbAccountId",
-            "type": "FLOAT",
-            "mode": "NULLABLE"
-          }
+          { "name": "identity_declaration", "type": "STRING", "mode": "NULLABLE" }
         ]
       },
       {
-        "name": "users",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "reportingManager",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "admin",
-            "type": "BOOLEAN",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "emailAddress",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "adsLinks",
-        "type": "RECORD",
-        "mode": "REPEATED",
-        "fields": [
-          {
-            "name": "status",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "adsId",
-            "type": "INTEGER",
-            "mode": "NULLABLE"
-          }
-        ]
-      },
-      {
-        "name": "accountManagement",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "id",
-        "type": "INTEGER",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "websiteUrl",
-        "type": "STRING",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "adultContent",
-        "type": "BOOLEAN",
-        "mode": "NULLABLE"
-      },
-      {
-        "name": "businessInformation",
+        "name": "latino_owned",
         "type": "RECORD",
         "mode": "NULLABLE",
         "fields": [
+          { "name": "identity_declaration", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      },
+      {
+        "name": "small_business",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "identity_declaration", "type": "STRING", "mode": "NULLABLE" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "automatic_improvements",
+    "type": "RECORD",
+    "mode": "NULLABLE",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      {
+        "name": "item_updates",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "effective_allow_price_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+          { "name": "effective_allow_availability_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+          { "name": "effective_allow_strict_availability_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+          { "name": "effective_allow_condition_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
           {
-            "name": "phoneVerificationStatus",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "phoneNumber",
-            "type": "STRING",
-            "mode": "NULLABLE"
-          },
-          {
-            "name": "customerService",
+            "name": "account_item_updates_settings",
             "type": "RECORD",
             "mode": "NULLABLE",
             "fields": [
-              {
-                "name": "phoneNumber",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "email",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "url",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              }
-            ]
-          },
-          {
-            "name": "address",
-            "type": "RECORD",
-            "mode": "NULLABLE",
-            "fields": [
-              {
-                "name": "postalCode",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "region",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "locality",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "country",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              },
-              {
-                "name": "streetAddress",
-                "type": "STRING",
-                "mode": "NULLABLE"
-              }
+              { "name": "allow_price_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+              { "name": "allow_availability_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+              { "name": "allow_strict_availability_updates", "type": "BOOLEAN", "mode": "NULLABLE" },
+              { "name": "allow_condition_updates", "type": "BOOLEAN", "mode": "NULLABLE" }
             ]
           }
         ]
       },
       {
-        "name": "name",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "image_improvements",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "effective_allow_automatic_image_improvements", "type": "BOOLEAN", "mode": "NULLABLE" },
+          {
+            "name": "account_image_improvements_settings",
+            "type": "RECORD",
+            "mode": "NULLABLE",
+            "fields": [
+              { "name": "allow_automatic_image_improvements", "type": "BOOLEAN", "mode": "NULLABLE" }
+            ]
+          }
+        ]
       },
       {
-        "name": "kind",
-        "type": "STRING",
-        "mode": "NULLABLE"
+        "name": "shipping_improvements",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "allow_shipping_improvements", "type": "BOOLEAN", "mode": "NULLABLE" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "users",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "state", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "access_rights", "type": "STRING", "mode": "REPEATED" }
+    ]
+  },
+  {
+    "name": "account_relationships",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "provider", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "provider_display_name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "account_id_alias", "type": "STRING", "mode": "NULLABLE" }
+    ]
+  },
+  {
+    "name": "account_services",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "provider", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "provider_display_name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "external_account_id", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "mutability", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "service_type", "type": "STRING", "mode": "NULLABLE" },
+      {
+        "name": "handshake",
+        "type": "RECORD",
+        "mode": "NULLABLE",
+        "fields": [
+          { "name": "approval_state", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "actor", "type": "STRING", "mode": "NULLABLE" }
+        ]
       }
     ]
   }

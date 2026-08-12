@@ -20,82 +20,89 @@ CREATE OR REPLACE TABLE ${PROJECT_NAME}.${DATASET_NAME}.MEX_ML_Data
 AS
 WITH
   AccountNames AS (
-    SELECT DISTINCT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-      CONCAT(C.name, ' (', C.id, ')') AS merchant_name_with_id
-    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A, A.children AS C
-  ),
-  Lia AS (
+    -- Flat Merchant API v1 accounts. The INNER JOIN to the parent restricts to
+    -- sub-accounts of advanced/MCA accounts, matching the original behavior of
+    -- cross-joining only `accounts.children`. C = sub-account, P = aggregator.
     SELECT DISTINCT
       C.account_id AS merchant_id,
+      C.account_name AS merchant_name,
+      P.account_id AS aggregator_id,
+      P.account_name AS aggregator_name,
+      CONCAT(C.account_name, ' (', CAST(C.account_id AS STRING), ')') AS merchant_name_with_id
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS C
+    JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON C.parent_account = P.account_id
+  ),
+  -- Native Merchant API v1 omnichannel settings. The `liasettings` table
+  -- is now FLAT -- one row per (sub-/standalone) account with a repeated per-region
+  -- `omnichannel_settings` list. The old children-only roll-down (`L.children`) is
+  -- gone; the downstream `Account` CTE already INNER JOINs to the parent so only
+  -- MCA sub-accounts survive. Status strings became enum NAME strings; the
+  -- hostedLocalStorefront + mHLSF signals folded into the single `lsf_type` enum.
+  Lia AS (
+    SELECT DISTINCT
+      L.account_id AS merchant_id,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
+        FROM L.omnichannel_settings
         WHERE
-          inventory.status = 'active'
-          AND inventory.inventory_verification_contact_status = 'active'
-          AND about.status = 'active'
+          in_stock.state = 'ACTIVE'
+          AND inventory_verification.contact_state = 'ACTIVE'
+          AND about.state = 'ACTIVE'
       ) AS lia_has_lia_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE
-          hosted_local_storefront_active
-          OR omnichannel_experience.lsf_type IN ('mhlsfBasic', 'mhlsfFull')
+        FROM L.omnichannel_settings
+        WHERE lsf_type IN ('GHLSF', 'MHLSF_BASIC', 'MHLSF_FULL')
       ) AS lia_has_mhlsf_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE
-          store_pickup_active
-          OR ARRAY_LENGTH(omnichannel_experience.pickup_types) > 0
+        FROM L.omnichannel_settings
+        WHERE pickup.state = 'ACTIVE'
       ) AS lia_has_store_pickup_implemented,
       EXISTS(
         SELECT 1
-        FROM C.country_settings
-        WHERE on_display_to_order.status = 'active'
+        FROM L.omnichannel_settings
+        WHERE odo.state = 'ACTIVE'
       ) AS lia_has_odo_implemented
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L,
-      L.children AS C
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
   AccountLevelShipping AS (
   SELECT DISTINCT
-    S.settings.accountId AS merchant_id,
-    ARRAY_LENGTH(S.settings.services) > 0 AS has_account_level_shipping
+    S.account_id AS merchant_id,
+    ARRAY_LENGTH(S.services) > 0 AS has_account_level_shipping
   FROM ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings AS S
   ),
   Account AS (
+    -- C = sub-account, P = aggregator/parent (INNER JOIN keeps MCA children only).
     SELECT DISTINCT
-      C.id AS merchant_id,
-      A.settings.id AS aggregator_id,
+      C.account_id AS merchant_id,
+      P.account_id AS aggregator_id,
       ALS.has_account_level_shipping,
       IFNULL(
-        C.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements)
+        C.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
+        P.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements)
         AS has_image_aiu_enabled,
       IFNULL(
         (
-          C.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR C.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
+          C.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR C.automatic_improvements.item_updates.effective_allow_availability_updates),
         (
-          A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates))
+          P.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR P.automatic_improvements.item_updates.effective_allow_availability_updates))
         AS has_availability_aiu_enabled,
       L.lia_has_lia_implemented,
       L.lia_has_mhlsf_implemented,
       L.lia_has_store_pickup_implemented,
       L.lia_has_odo_implemented
     FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS C
+    JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON C.parent_account = P.account_id
     LEFT JOIN AccountLevelShipping AS ALS
-      ON ALS.merchant_id = C.id
+      ON ALS.merchant_id = C.account_id
     LEFT JOIN Lia AS L
-      ON L.merchant_id = C.id
+      ON L.merchant_id = C.account_id
   ),
   AdsStats AS (
     SELECT
@@ -127,12 +134,12 @@ WITH
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'SurfacesAcrossGoogle'
+        WHERE reporting_context = 'FREE_LISTINGS'
       ) AS has_free_listings_enabled,
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'DisplayAds'
+        WHERE reporting_context = 'DEMAND_GEN_ADS'
       ) AS has_dynamic_remarketing_enabled,
     FROM
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
@@ -141,7 +148,7 @@ WITH
   ProductStatus AS (
     SELECT
       account_id AS merchant_id,
-      P.product.channel,
+      P.channel,
       offer_id AS product_id,
       P.status.item_level_issues,
       ARRAY(
@@ -158,7 +165,7 @@ WITH
     LEFT JOIN P.status.destination_statuses AS DS
     INNER JOIN EnabledDestinations AS ED
       ON ED.product_id = P.offer_id
-    WHERE DS.destination = 'Shopping'
+    WHERE DS.reporting_context = 'SHOPPING_ADS'
   ),
   ItemIssues AS (
     SELECT
@@ -170,7 +177,7 @@ WITH
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.item_level_issues AS ILI,
       ILI.applicable_countries AS country
-    WHERE ILI.destination = 'Shopping'
+    WHERE ILI.reporting_context = 'SHOPPING_ADS'
     GROUP BY
       merchant_id,
       product_id,
@@ -209,17 +216,17 @@ WITH
       PSC.has_dynamic_remarketing_enabled,
       P.product.offer_id AS item_id,
       P.product.content_language AS language,
-      IFNULL(P.product.brand, '') AS brand,
-      IFNULL(P.product.custom_label0, '') AS custom_label_0,
-      IFNULL(P.product.custom_label1, '') AS custom_label_1,
-      IFNULL(P.product.custom_label2, '') AS custom_label_2,
-      IFNULL(P.product.custom_label3, '') AS custom_label_3,
-      IFNULL(P.product.custom_label4, '') AS custom_label_4,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
+      IFNULL(P.product.product_attributes.brand, '') AS brand,
+      IFNULL(P.product.product_attributes.custom_label_0, '') AS custom_label_0,
+      IFNULL(P.product.product_attributes.custom_label_1, '') AS custom_label_1,
+      IFNULL(P.product.product_attributes.custom_label_2, '') AS custom_label_2,
+      IFNULL(P.product.product_attributes.custom_label_3, '') AS custom_label_3,
+      IFNULL(P.product.product_attributes.custom_label_4, '') AS custom_label_4,
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
         AS product_type_lvl1,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
         AS product_type_lvl2,
-      IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
+      IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
         AS product_type_lvl3,
       AC.has_account_level_shipping,
       AC.has_image_aiu_enabled,
@@ -228,20 +235,19 @@ WITH
       AC.lia_has_mhlsf_implemented,
       AC.lia_has_store_pickup_implemented,
       AC.lia_has_odo_implemented,
-      P.product.gtin,
-      P.product.description,
-      P.product.title,
-      P.product.color,
-      P.product.age_group,
-      P.product.gender,
-      P.product.sizes,
-      P.product.additional_image_links,
-      P.product.sale_price,
-      P.product.item_group_id,
-      P.product.product_types,
-      P.product.product_highlights,
-      P.product.source,
-      P.product.shipping,
+      P.product.product_attributes.gtins[SAFE_ORDINAL(1)] AS gtin,
+      P.product.product_attributes.description,
+      P.product.product_attributes.title,
+      P.product.product_attributes.color,
+      P.product.product_attributes.age_group,
+      P.product.product_attributes.gender,
+      P.product.product_attributes.size,
+      P.product.product_attributes.additional_image_links,
+      P.product.product_attributes.sale_price,
+      P.product.product_attributes.item_group_id,
+      P.product.product_attributes.product_types,
+      P.product.product_attributes.product_highlights,
+      P.product.product_attributes.shipping,
       (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
       IFNULL(AD.impressions_last30days, 0) AS impressions,
       IFNULL(AD.clicks_last30days, 0) AS clicks,
@@ -306,11 +312,14 @@ SELECT
   P.color IS NOT NULL AS has_color,
   P.age_group IS NOT NULL AS has_age_group,
   P.gender IS NOT NULL AS has_gender,
-  ARRAY_LENGTH(P.sizes) > 0 AS has_size,
-  P.lia_has_mhlsf_implemented AS has_mhlsf_implemented,
-  P.lia_has_store_pickup_implemented AS has_store_pickup_implemented,
-  P.lia_has_odo_implemented AS has_odo_implemented,
-  CAST(P.sale_price.value AS FLOAT64) > 0 AS has_sale_price,
+  IFNULL(P.size, '') != '' AS has_size,
+  -- Accounts with no row in the (flat, native-v1) liasettings table get NULL from
+  -- the LEFT JOIN; coalesce to FALSE to preserve the pre-migration explicit-False
+  -- semantics ("not implemented") for these ML features.
+  IFNULL(P.lia_has_mhlsf_implemented, FALSE) AS has_mhlsf_implemented,
+  IFNULL(P.lia_has_store_pickup_implemented, FALSE) AS has_store_pickup_implemented,
+  IFNULL(P.lia_has_odo_implemented, FALSE) AS has_odo_implemented,
+  IFNULL(P.sale_price.amount_micros, 0) > 0 AS has_sale_price,
   ARRAY_LENGTH(P.additional_image_links) > 0 AS has_additional_images,
   P.impressions AS impressions_30days,
   P.clicks AS clicks_30days,

@@ -116,6 +116,8 @@ run_pipeline() {
     "$(rlocation ads_oneshop/acit/create_base_tables)" \
       --products_output="${SINKS_DIR}/wide_products_table.jsonlines" \
       --liasettings_output="${SINKS_DIR}/liasettings.jsonlines" \
+      --accounts_output="${SINKS_DIR}/accounts.jsonlines" \
+      --shippingsettings_output="${SINKS_DIR}/shippingsettings.jsonlines" \
       --source_dir="${SOURCES_DIR}" \
       -- \
       --service_account_email="${DATAFLOW_SERVICE_ACCOUNT}" \
@@ -130,6 +132,8 @@ run_pipeline() {
     "$(rlocation ads_oneshop/acit/create_base_tables)" \
       --products_output="${SINKS_DIR}/wide_products_table.jsonlines" \
       --liasettings_output="${SINKS_DIR}/liasettings.jsonlines" \
+      --accounts_output="${SINKS_DIR}/accounts.jsonlines" \
+      --shippingsettings_output="${SINKS_DIR}/shippingsettings.jsonlines" \
       --source_dir="${SOURCES_DIR}" \
       -- \
       --runner=direct
@@ -143,9 +147,9 @@ upload_to_bq() {
   # bq cli can load from wildcards, with limitations
   if [[ "${USE_DATAFLOW_RUNNER}" = 'true' ]]; then
     # BQ_DIR isn't used at all in this case
-    local accounts_path="${SOURCES_DIR}/merchant_center/*/accounts/rows.jsonlines"
+    local accounts_path="${SINKS_DIR}/accounts.jsonlines-*"
     if [[ "${ADMIN}" = true ]]; then
-      local shippingsettings_path="${SOURCES_DIR}/merchant_center/*/shippingsettings/rows.jsonlines"
+      local shippingsettings_path="${SINKS_DIR}/shippingsettings.jsonlines-*"
       local liasettings_path="${SINKS_DIR}/liasettings.jsonlines-*"
     fi
     local performance_path="${SOURCES_DIR}/ads/all/shopping_performance_view/*rows.jsonlines"
@@ -154,10 +158,10 @@ upload_to_bq() {
   else
     rm -rf "${BQ_DIR}" && mkdir -p "${BQ_DIR}"
     local accounts_path="${BQ_DIR}/accounts.jsonlines"
-    cat $(find "${SOURCES_DIR}" -type f | grep accounts) > "${accounts_path}"
+    cat $(find "${SINKS_DIR}" -type f | grep accounts) > "${accounts_path}"
     if [[ "${ADMIN}" = true ]]; then
       local shippingsettings_path="${BQ_DIR}/shippingsettings.jsonlines"
-      cat $(find "${SOURCES_DIR}" -type f | grep shippingsettings) > "${shippingsettings_path}"
+      cat $(find "${SINKS_DIR}" -type f | grep shippingsettings) > "${shippingsettings_path}"
       local liasettings_path="${BQ_DIR}/liasettings.jsonlines"
       cat $(find "${SINKS_DIR}" -type f | grep liasettings) > "${liasettings_path}"
     fi
@@ -177,7 +181,7 @@ upload_to_bq() {
     "accounts" \
     "NEWLINE_DELIMITED_JSON" \
     "${ttl}" \
-    "$(rlocation ads_oneshop/acit/schemas/acit/accounts.schema)"
+    "$(rlocation ads_oneshop/acit/api/v0/storage/accounts.schema)"
 
   if [[ "${ADMIN}" = true ]]; then
     bq::load \
@@ -185,7 +189,7 @@ upload_to_bq() {
       "shippingsettings" \
       "NEWLINE_DELIMITED_JSON" \
       "${ttl}" \
-      "$(rlocation ads_oneshop/acit/schemas/acit/shippingsettings.schema)"
+      "$(rlocation ads_oneshop/acit/api/v0/storage/shippingsettings.schema)"
 
     bq::load \
       "${liasettings_path}" \

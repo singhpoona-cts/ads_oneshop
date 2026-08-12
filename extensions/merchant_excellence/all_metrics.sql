@@ -52,66 +52,47 @@ CREATE OR REPLACE TABLE ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE))
 AS
 WITH
-  AllLiaSettings AS (
-    SELECT
-      L.settings.account_id,
-      L.settings.country_settings
-    FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
-    WHERE ARRAY_LENGTH(L.children) = 0
-    UNION ALL
-    SELECT
-      C.account_id,
-      C.country_settings
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L,
-      L.children AS C
-  ),
+  -- Native Merchant API v1 omnichannel settings. The `liasettings` table
+  -- is now FLAT -- one row per account with a repeated per-region
+  -- `omnichannel_settings` list (the old {settings, children[]} envelope is gone;
+  -- v1 lists settings per sub-/standalone account directly). Status strings became
+  -- enum NAME strings ('active' -> 'ACTIVE'); hostedLocalStorefront + mHLSF folded
+  -- into the single `lsf_type` enum.
   Lia AS (
     SELECT DISTINCT
       L.account_id AS merchant_id,
       EXISTS(
         SELECT 1
-        FROM L.country_settings
+        FROM L.omnichannel_settings
         WHERE
-          inventory.status = 'active'
-          AND inventory.inventory_verification_contact_status = 'active'
-          AND about.status = 'active'
+          in_stock.state = 'ACTIVE'
+          AND inventory_verification.contact_state = 'ACTIVE'
+          AND about.state = 'ACTIVE'
       ) AS lia_has_lia_implemented,
       EXISTS(
         SELECT 1
-        FROM L.country_settings
-        WHERE
-          hosted_local_storefront_active
-          OR omnichannel_experience.lsf_type IN ('mhlsfBasic', 'mhlsfFull')
+        FROM L.omnichannel_settings
+        WHERE lsf_type IN ('GHLSF', 'MHLSF_BASIC', 'MHLSF_FULL')
       ) AS lia_has_mhlsf_implemented,
       EXISTS(
         SELECT 1
-        FROM L.country_settings
-        WHERE
-          store_pickup_active
-          OR ARRAY_LENGTH(omnichannel_experience.pickup_types) > 0
+        FROM L.omnichannel_settings
+        WHERE pickup.state = 'ACTIVE'
       ) AS lia_has_store_pickup_implemented,
       EXISTS(
         SELECT 1
-        FROM L.country_settings
-        WHERE on_display_to_order.status = 'active'
+        FROM L.omnichannel_settings
+        WHERE odo.state = 'ACTIVE'
       ) AS lia_has_odo_implemented
-    FROM
-      AllLiaSettings AS L
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
   AllShippingData AS (
+    -- Native Merchant API v1 flat per-account shipping settings. The
+    -- old {settings, children[]} envelope is gone; each row is one account.
     SELECT
-      settings.accountId,
-      settings.services
+      account_id AS accountId,
+      services
     FROM ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings
-    WHERE ARRAY_LENGTH(children) = 0
-    UNION ALL
-    SELECT
-      CH.settings.accountId,
-      CH.settings.services
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings AS SS,
-      SS.children AS CH
   ),
   AccountLevelShipping AS (
     SELECT DISTINCT
@@ -121,35 +102,35 @@ WITH
         SELECT *
         FROM SS.services
         WHERE
-          deliveryTime.maxTransitTimeInDays IS NOT NULL
-          AND deliveryTime.minTransitTimeInDays IS NOT NULL
-          AND deliveryTime.minHandlingTimeInDays IS NOT NULL
-          AND deliveryTime.maxHandlingTimeInDays IS NOT NULL
+          delivery_time.max_transit_days IS NOT NULL
+          AND delivery_time.min_transit_days IS NOT NULL
+          AND delivery_time.min_handling_days IS NOT NULL
+          AND delivery_time.max_handling_days IS NOT NULL
       ) AS has_account_level_shipping_speed,
       EXISTS(
         SELECT *
         FROM SS.services
         WHERE
-          deliveryTime.maxTransitTimeInDays IS NOT NULL
-          AND deliveryTime.maxHandlingTimeInDays IS NOT NULL
-          AND deliveryTime.maxTransitTimeInDays + deliveryTime.maxHandlingTimeInDays <= 3
+          delivery_time.max_transit_days IS NOT NULL
+          AND delivery_time.max_handling_days IS NOT NULL
+          AND delivery_time.max_transit_days + delivery_time.max_handling_days <= 3
       ) AS has_account_level_fast_shipping,
       EXISTS(
         SELECT *
         FROM
           SS.services AS S,
-          S.rateGroups AS RG,
-          RG.mainTable.rows AS RS,
+          S.rate_groups AS RG,
+          RG.main_table.rows AS RS,
           RS.cells AS C
         WHERE
-          C.flatRate.value = 0
+          C.flat_rate.amount_micros = 0
       )
         OR EXISTS(
           SELECT *
           FROM
             SS.services AS S,
-            S.rateGroups AS RG
-          WHERE RG.singleValue.flatRate.value = 0
+            S.rate_groups AS RG
+          WHERE RG.single_value.flat_rate.amount_micros = 0
         ) AS has_account_level_free_shipping
     FROM AllShippingData AS SS
   ),
@@ -160,51 +141,40 @@ WITH
       EXISTS(
         SELECT 1
         FROM P.status.destination_statuses
-        WHERE destination = 'SurfacesAcrossGoogle'
+        WHERE reporting_context = 'FREE_LISTINGS'
       ) AS has_free_listings_enabled,
     FROM
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.destination_statuses AS DS
   ),
   AllAccounts AS (
+    -- Flat Merchant API v1 accounts: one row per (leaf) account. Advanced/MCA
+    -- accounts are excluded as merchants (is_advanced); the parent account is
+    -- self-joined for the aggregator name and to roll down account-level
+    -- automatic-improvements settings to sub-accounts.
     SELECT
-      A.settings.id AS merchant_id,
-      A.settings.name AS merchant_name,
-      0 AS aggregator_id,
-      NULL AS aggregator_name,
-      IFNULL(
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
+      A.account_id AS merchant_id,
+      A.account_name AS merchant_name,
+      IFNULL(A.parent_account, 0) AS aggregator_id,
+      P.account_name AS aggregator_name,
+      COALESCE(
+        A.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
+        P.automatic_improvements.image_improvements.effective_allow_automatic_image_improvements,
         FALSE)
         AS has_image_aiu_enabled,
-      IFNULL(
-        A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates,
+      COALESCE(
+        (
+          A.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR A.automatic_improvements.item_updates.effective_allow_availability_updates),
+        (
+          P.automatic_improvements.item_updates.effective_allow_strict_availability_updates
+          OR P.automatic_improvements.item_updates.effective_allow_availability_updates),
         FALSE)
         AS has_availability_aiu_enabled,
     FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
-    WHERE ARRAY_LENGTH(A.children) = 0
-    UNION ALL
-    SELECT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-      COALESCE(
-        C.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        A.settings.automaticImprovements.imageImprovements.effectiveAllowAutomaticImageImprovements,
-        FALSE)
-        AS has_image_aiu_enabled,
-      COALESCE(
-        (
-          C.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR C.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
-        (
-          A.settings.automaticImprovements.itemUpdates.effectiveAllowStrictAvailabilityUpdates
-          OR A.settings.automaticImprovements.itemUpdates.effectiveAllowAvailabilityUpdates),
-        FALSE) AS has_availability_aiu_enabled,
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+    LEFT JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON A.parent_account = P.account_id
+    WHERE NOT A.is_advanced
   ),
   AccountNames AS (
     SELECT DISTINCT
@@ -259,7 +229,7 @@ WITH
   ProductStatus AS (
     SELECT
       account_id AS merchant_id,
-      P.product.channel,
+      P.channel,
       offer_id AS product_id,
       P.status.item_level_issues,
       ARRAY(
@@ -275,7 +245,7 @@ WITH
     LEFT JOIN P.status.destination_statuses AS DS
     LEFT JOIN EnabledDestinations AS ED
       ON ED.product_id = P.offer_id
-    WHERE DS.destination = 'Shopping'
+    WHERE DS.reporting_context = 'SHOPPING_ADS'
   ),
   ItemIssues AS (
     SELECT
@@ -287,7 +257,7 @@ WITH
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.item_level_issues AS ILI,
       ILI.applicable_countries AS country
-    WHERE ILI.destination = 'Shopping'
+    WHERE ILI.reporting_context = 'SHOPPING_ADS'
     GROUP BY
       merchant_id,
       product_id,
@@ -322,34 +292,33 @@ SELECT
   PSC.item_issues,
   PSC.has_free_listings_enabled,
   P.product.offer_id AS item_id,
-  IFNULL(P.product.brand, '') AS brand,
-  IFNULL(P.product.custom_label0, '') AS custom_label_0,
-  IFNULL(P.product.custom_label1, '') AS custom_label_1,
-  IFNULL(P.product.custom_label2, '') AS custom_label_2,
-  IFNULL(P.product.custom_label3, '') AS custom_label_3,
-  IFNULL(P.product.custom_label4, '') AS custom_label_4,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
+  IFNULL(P.product.product_attributes.brand, '') AS brand,
+  IFNULL(P.product.product_attributes.custom_label_0, '') AS custom_label_0,
+  IFNULL(P.product.product_attributes.custom_label_1, '') AS custom_label_1,
+  IFNULL(P.product.product_attributes.custom_label_2, '') AS custom_label_2,
+  IFNULL(P.product.product_attributes.custom_label_3, '') AS custom_label_3,
+  IFNULL(P.product.product_attributes.custom_label_4, '') AS custom_label_4,
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(0)], '')
     AS product_type_lvl1,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(1)], '')
     AS product_type_lvl2,
-  IFNULL(SPLIT(P.product.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
+  IFNULL(SPLIT(P.product.product_attributes.product_types[SAFE_OFFSET(0)], ' > ')[SAFE_OFFSET(2)], '')
     AS product_type_lvl3,
-  P.product.gtin,
-  P.product.description,
-  P.product.title,
-  P.product.color,
-  P.product.age_group,
-  P.product.gender,
-  P.product.sizes,
-  P.product.additional_image_links,
-  P.product.lifestyle_image_links,
-  P.product.sale_price,
-  P.product.item_group_id,
-  P.product.product_types,
-  P.product.product_highlights,
-  P.product.source,
-  P.product.shipping,
-  P.product.cost_of_goods_sold,
+  P.product.product_attributes.gtins[SAFE_ORDINAL(1)] AS gtin,
+  P.product.product_attributes.description,
+  P.product.product_attributes.title,
+  P.product.product_attributes.color,
+  P.product.product_attributes.age_group,
+  P.product.product_attributes.gender,
+  P.product.product_attributes.size,
+  P.product.product_attributes.additional_image_links,
+  P.product.product_attributes.lifestyle_image_links,
+  P.product.product_attributes.sale_price,
+  P.product.product_attributes.item_group_id,
+  P.product.product_attributes.product_types,
+  P.product.product_attributes.product_highlights,
+  P.product.product_attributes.shipping,
+  P.product.product_attributes.cost_of_goods_sold,
   (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
   IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
   IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,
@@ -393,22 +362,17 @@ WITH
       ON BD.metric_name = BV.metric_name
   ),
   AllAccounts AS (
+    -- Flat Merchant API v1 accounts: one row per (leaf) account; parent
+    -- self-joined for the aggregator name. Advanced/MCA accounts are excluded.
     SELECT
-      A.settings.id AS merchant_id,
-      A.settings.name AS merchant_name,
-      0 AS aggregator_id,
-      NULL AS aggregator_name,
+      A.account_id AS merchant_id,
+      A.account_name AS merchant_name,
+      IFNULL(A.parent_account, 0) AS aggregator_id,
+      P.account_name AS aggregator_name,
     FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
-    WHERE ARRAY_LENGTH(A.children) = 0
-    UNION ALL
-    SELECT
-      C.id AS merchant_id,
-      C.name AS merchant_name,
-      A.settings.id AS aggregator_id,
-      A.settings.name AS aggregator_name,
-    FROM
-      ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A,
-      A.children AS C
+    LEFT JOIN ${PROJECT_NAME}.${DATASET_NAME}.accounts AS P
+      ON A.parent_account = P.account_id
+    WHERE NOT A.is_advanced
   ),
   AccountNames AS (
     SELECT DISTINCT
@@ -754,7 +718,7 @@ WITH
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     WHERE
-      ARRAY_LENGTH(sizes) > 0
+      IFNULL(size, '') != ''
     GROUP BY
       merchant_id,
       channel,
@@ -894,7 +858,7 @@ WITH
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
     WHERE
-      CAST(sale_price.value AS FLOAT64) > 0
+      IFNULL(sale_price.amount_micros, 0) > 0
     GROUP BY
       merchant_id,
       channel,
@@ -1384,40 +1348,6 @@ WITH
       brand,
       metric_name
   ),
-  OffersUploadedViaApi AS (
-    SELECT
-      merchant_id,
-      channel,
-      targeted_country,
-      product_type_lvl1,
-      product_type_lvl2,
-      product_type_lvl3,
-      custom_label_0,
-      custom_label_1,
-      custom_label_2,
-      custom_label_3,
-      custom_label_4,
-      brand,
-      'products uploaded via API' AS metric_name,
-      COUNT(*) AS metric_value
-    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
-    WHERE
-      source = 'api'
-    GROUP BY
-      merchant_id,
-      channel,
-      targeted_country,
-      product_type_lvl1,
-      product_type_lvl2,
-      product_type_lvl3,
-      custom_label_0,
-      custom_label_1,
-      custom_label_2,
-      custom_label_3,
-      custom_label_4,
-      brand,
-      metric_name
-  ),
   OffersWithShipping AS (
     SELECT
       merchant_id,
@@ -1558,7 +1488,7 @@ WITH
       EXISTS(
         SELECT *
         FROM TP.shipping
-        WHERE CAST(price.value AS FLOAT64) = 0
+        WHERE IFNULL(price.amount_micros, 0) = 0
       )
       OR (has_account_level_free_shipping AND ARRAY_LENGTH(shipping) = 0)
     GROUP BY
@@ -1848,7 +1778,7 @@ WITH
       '% items with cost_of_goods_sold' AS metric_name,
       COUNT(*) AS metric_value
     FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
-    WHERE CAST(cost_of_goods_sold.value AS FLOAT64) > 0
+    WHERE IFNULL(cost_of_goods_sold.amount_micros, 0) > 0
     GROUP BY
       merchant_id,
       channel,
@@ -1914,8 +1844,6 @@ WITH
     SELECT * FROM LiaItemsWithNoInventory
     UNION ALL
     SELECT * FROM LiaOffersApproved
-    UNION ALL
-    SELECT * FROM OffersUploadedViaApi
     UNION ALL
     SELECT * FROM OffersWithShipping
     UNION ALL
