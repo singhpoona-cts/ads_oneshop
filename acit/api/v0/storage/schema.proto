@@ -19,16 +19,7 @@ package acit.api.v0.storage;
 import "bq_table.proto";
 import "google/shopping/merchant/products/v1/products.proto";
 import "google/shopping/merchant/products/v1/products_common.proto";
-import "google/shopping/merchant/accounts/v1/accountrelationships.proto";
-import "google/shopping/merchant/accounts/v1/accountservices.proto";
-import "google/shopping/merchant/accounts/v1/automaticimprovements.proto";
-import "google/shopping/merchant/accounts/v1/businessidentity.proto";
-import "google/shopping/merchant/accounts/v1/businessinfo.proto";
-import "google/shopping/merchant/accounts/v1/homepage.proto";
 import "google/shopping/merchant/accounts/v1/omnichannelsettings.proto";
-import "google/shopping/merchant/accounts/v1/shippingsettings.proto";
-import "google/shopping/merchant/accounts/v1/user.proto";
-import "google/type/datetime.proto";
 
 message WideProduct {
   option (gen_bq_schema.bigquery_opts).table_name = "Products";
@@ -60,79 +51,4 @@ message OmnichannelLiaSettings {
   optional int64 account_id = 1;
 
   repeated google.shopping.merchant.accounts.v1.OmnichannelSetting omnichannel_settings = 2;
-}
-
-// Content API `shippingsettings` -> Merchant API v1 migration:
-// v1 `ShippingSettings` is a singleton per account, identified only by its
-// resource name (`accounts/{id}/shippingSettings`). The resource name carries no
-// analytical value, so it is dropped and an explicit `account_id` added --
-// matching the `liasettings` table and keeping the MEX joins on `account_id`
-// working unchanged.
-//
-// `services` and `warehouses` are the API messages verbatim. The MEX views
-// reach deep into `services` (`delivery_time.*`, and
-// `rate_groups.main_table.rows.cells.flat_rate.amount_micros`), which is exactly
-// why this shape should come from the API proto rather than be maintained by
-// hand.
-message ShippingSettings {
-  option (gen_bq_schema.bigquery_opts).table_name = "shippingsettings";
-
-  optional int64 account_id = 1;
-  repeated google.shopping.merchant.accounts.v1.Service services = 2;
-  repeated google.shopping.merchant.accounts.v1.Warehouse warehouses = 3;
-  optional string etag = 4;
-}
-
-// One row of the `account_services` repeated field.
-//
-// v1 `AccountService` carries the kind of service in a `service_type` oneof
-// whose members are all EMPTY messages, so the only information they hold is
-// which member is set. Embedding it verbatim would give BigQuery six
-// always-empty STRUCT columns, so the oneof is flattened to a single
-// `service_type` STRING holding the set member's name (upper-cased). Every
-// other field mirrors the API message.
-message AccountServiceRow {
-  optional string name = 1;
-  optional string provider = 2;
-  optional string provider_display_name = 3;
-  optional string external_account_id = 4;
-  optional google.shopping.merchant.accounts.v1.AccountService.Mutability mutability = 5;
-  optional string service_type = 6;
-  optional google.shopping.merchant.accounts.v1.Handshake handshake = 7;
-}
-
-// Content API `accounts` -> Merchant API v1 migration:
-// the old monolithic `Account` is split across many v1 sub-resources, so an
-// account is re-assembled into one flat row here. The core `Account` scalars
-// are inlined (rather than embedding the whole message) because the v1
-// `Account.name` / resource-name plumbing carries no analytical value.
-//
-// `account_id` and `parent_account` are int64 to match the columns the
-// downstream views already expect -- `ml_data.sql` does
-// `CAST(account_id AS STRING)` and `account_list.sql` self-joins
-// `parent_account = account_id`.
-message Account {
-  option (gen_bq_schema.bigquery_opts).table_name = "accounts";
-
-  optional int64 account_id = 1;
-  optional string account_name = 2;
-  optional bool adult_content = 3;
-  optional bool test_account = 4;
-  optional google.type.TimeZone time_zone = 5;
-  optional string language_code = 6;
-  // Whether this is an advanced (multi-client) account. Derived from whether
-  // the account reported any sub-accounts, not an API field.
-  optional bool is_advanced = 7;
-  // The aggregator this account sits under; unset for standalone accounts and
-  // for aggregators themselves.
-  optional int64 parent_account = 8;
-
-  optional google.shopping.merchant.accounts.v1.Homepage homepage = 9;
-  optional google.shopping.merchant.accounts.v1.BusinessInfo business_info = 10;
-  optional google.shopping.merchant.accounts.v1.BusinessIdentity business_identity = 11;
-  optional google.shopping.merchant.accounts.v1.AutomaticImprovements automatic_improvements = 12;
-
-  repeated google.shopping.merchant.accounts.v1.User users = 13;
-  repeated google.shopping.merchant.accounts.v1.AccountRelationship account_relationships = 14;
-  repeated AccountServiceRow account_services = 15;
 }

@@ -63,7 +63,7 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
     client = _FakeProductsClient(self._products(3))
     result = (
         merchant_products.  # pylint: disable=protected-access
-        _list_account_products(client, '123'))
+        _list_leaf_products(client, '123'))
     # Nothing is fetched or converted until the caller starts iterating.
     self.assertEqual(client.consumed, 0)
     first = next(iter(result))
@@ -73,7 +73,7 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
   def test_yields_every_product(self):
     client = _FakeProductsClient(self._products(5))
     rows = list(merchant_products.  # pylint: disable=protected-access
-                _list_account_products(client, '123'))
+                _list_leaf_products(client, '123'))
     self.assertLen(rows, 5)
     self.assertEqual([r.offer_id for r in rows],
                      [f'SKU{i}' for i in range(5)])
@@ -82,7 +82,7 @@ class ListLeafProductsStreamingTest(absltest.TestCase):
     client = _FakeProductsClient([])
     self.assertEmpty(
         list(merchant_products.  # pylint: disable=protected-access
-             _list_account_products(client, '123')))
+             _list_leaf_products(client, '123')))
 
   def test_download_products_streams_to_disk(self):
     """`_process` must write while iterating, not after collecting."""

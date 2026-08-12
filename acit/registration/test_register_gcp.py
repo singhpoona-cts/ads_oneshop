@@ -22,29 +22,25 @@ from absl.testing import flagsaver
 from acit.registration import register_gcp
 from etils import epath
 from google.auth import credentials
-from google.shopping import merchant_accounts_v1
+from google.shopping.merchant_accounts_v1 import (
+    DeveloperRegistrationServiceClient,
+    RegisterGcpRequest,
+)
 
 
 class RegisterGcpTest(absltest.TestCase):
-  """Tests for the GCP Merchant Center registration utility tool."""
 
   def setUp(self):
-    """Saves the current environment variables before tests run."""
-
     super().setUp()
     # Save environment variables to restore them after tests
     self.original_env = dict(os.environ)
 
   def tearDown(self):
-    """Restores the environment variables to their original state."""
-
     os.environ.clear()
     os.environ.update(self.original_env)
     super().tearDown()
 
   def test_get_credentials_from_env(self):
-    """Verifies credentials can be loaded directly from environment variables."""
-
     os.environ['GOOGLE_ADS_REFRESH_TOKEN'] = 'env-refresh-token'
     os.environ['GOOGLE_ADS_CLIENT_ID'] = 'env-client-id'
     os.environ['GOOGLE_ADS_CLIENT_SECRET'] = 'env-client-secret'
@@ -59,8 +55,6 @@ class RegisterGcpTest(absltest.TestCase):
     self.assertEqual(creds.client_secret, 'env-client-secret')
 
   def test_get_credentials_from_files(self):
-    """Verifies credentials can be loaded from local configuration files."""
-
     # Ensure env vars are not set
     os.environ.pop('GOOGLE_ADS_REFRESH_TOKEN', None)
     os.environ.pop('GOOGLE_ADS_CLIENT_ID', None)
@@ -84,8 +78,6 @@ class RegisterGcpTest(absltest.TestCase):
 
   @mock.patch('google.auth.default')
   def test_get_credentials_fallback_to_adc(self, mock_auth_default):
-    """Verifies fallback to Application Default Credentials when all else fails."""
-
     # Ensure env vars are not set
     os.environ.pop('GOOGLE_ADS_REFRESH_TOKEN', None)
     os.environ.pop('GOOGLE_ADS_CLIENT_ID', None)
@@ -102,11 +94,8 @@ class RegisterGcpTest(absltest.TestCase):
     self.assertEqual(creds, mock_creds)
     mock_auth_default.assert_called_once()
 
-  @mock.patch.object(merchant_accounts_v1.DeveloperRegistrationServiceClient,
-                     'register_gcp')
+  @mock.patch.object(DeveloperRegistrationServiceClient, 'register_gcp')
   def test_register_gcp_project_success(self, mock_register_gcp):
-    """Verifies the GCP project is registered correctly via the API client."""
-
     mock_creds = mock.create_autospec(credentials.Credentials, instance=True)
     account_id = '123456789'
     developer_email = 'admin@example.com'
@@ -117,23 +106,19 @@ class RegisterGcpTest(absltest.TestCase):
 
     register_gcp.register_gcp_project(account_id, developer_email, mock_creds)
 
-    expected_request = merchant_accounts_v1.RegisterGcpRequest(
+    expected_request = RegisterGcpRequest(
         name=f'accounts/{account_id}/developerRegistration',
         developer_email=developer_email,
     )
     mock_register_gcp.assert_called_once_with(request=expected_request)
 
   def test_main_missing_account_id(self):
-    """Verifies the main function fails when account_id flag is missing."""
-
     with flagsaver.as_parsed(account_id='', developer_email='test@test.com'):
       with self.assertRaisesRegex(
-          register_gcp.app.UsageError, '--account_id is required.'):
-          register_gcp.main([])
+        register_gcp.app.UsageError, '--account_id is required.'):
+        register_gcp.main([])
 
   def test_main_missing_developer_email(self):
-    """Verifies the main function fails when developer_email flag is missing."""
-
     with flagsaver.as_parsed(account_id='123456789', developer_email=''):
       with self.assertRaisesRegex(register_gcp.app.UsageError,
                                   '--developer_email is required.'):
@@ -142,8 +127,6 @@ class RegisterGcpTest(absltest.TestCase):
   @mock.patch.object(register_gcp, 'get_credentials')
   @mock.patch.object(register_gcp, 'register_gcp_project')
   def test_main_success(self, mock_register_gcp_project, mock_get_credentials):
-    """Verifies the main function correctly orchestrates the registration."""
-
     with flagsaver.as_parsed(account_id='123456789',
                              developer_email='admin@example.com'):
       mock_creds = mock.create_autospec(credentials.Credentials, instance=True)

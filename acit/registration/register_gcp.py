@@ -17,9 +17,8 @@ This corresponds to the one-time developer registration setup via the
 `registerGcp` call of the DeveloperRegistrationService in the Merchant API.
 """
 
-from collections.abc import Sequence
 import os
-
+from collections.abc import Sequence
 from absl import app
 from absl import flags
 from absl import logging
@@ -28,8 +27,10 @@ from etils import epath
 from google import auth
 from google.auth import credentials
 from google.oauth2 import credentials as oauth_credentials
-from google.shopping import merchant_accounts_v1
-
+from google.shopping.merchant_accounts_v1 import (
+    DeveloperRegistrationServiceClient,
+    RegisterGcpRequest,
+)
 
 _OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 
@@ -75,7 +76,7 @@ def get_credentials(
         secrets = oauth.get_secrets_dict(str(client_secrets_path))
         client_id, client_secret = oauth.get_client_id_and_secret(secrets)
         refresh_token = refresh_token_path.read_text().strip()
-      except Exception as e:  # pylint: disable=broad-exception-caught
+      except Exception as e:
         logging.warning('Failed to load OAuth credentials from files: %s', e)
 
   if refresh_token and client_id and client_secret:
@@ -101,13 +102,12 @@ def register_gcp_project(
 ) -> None:
   """Registers the Google Cloud project with the Merchant Center account."""
   logging.info(
-      'Registering GCP project with Merchant Center ID %s for developer %s',
+      'Registering GCP project with Merchant Center account %s for developer %s',
       account_id,
       developer_email,
   )
-  client = merchant_accounts_v1.DeveloperRegistrationServiceClient(
-      credentials=creds)
-  request = merchant_accounts_v1.RegisterGcpRequest(
+  client = DeveloperRegistrationServiceClient(credentials=creds)
+  request = RegisterGcpRequest(
       name=f'accounts/{account_id}/developerRegistration',
       developer_email=developer_email,
   )

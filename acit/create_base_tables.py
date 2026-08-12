@@ -26,24 +26,26 @@ Aggregates the following data:
    - The advertising performance of those products
 """
 
-import copy
-import json
-from typing import Any
-
 from absl import app
 from absl import flags
+
+import json
+
+
 from acit import performance_max
-from acit import product
 from acit import shopping
-from acit.api.v0.storage import schema_pb2
+from acit import product
 from acit.utils import METADATA_KEY
+from acit.api.v0.storage import schema_pb2
+
+from google.protobuf import json_format
+
 import apache_beam as beam
 from apache_beam import pipeline
-from apache_beam import pvalue
-from apache_beam.io import fileio
 from apache_beam.io import textio
+from apache_beam.io import fileio
 from apache_beam.options import pipeline_options
-from google.protobuf import json_format
+from apache_beam import pvalue
 
 # Omit variable declaration so we can pickle __main__.
 flags.DEFINE_string(
@@ -58,18 +60,6 @@ flags.DEFINE_string(
     'liasettings_output',
     'liasettings.json',
     'The Local Inventory Ads settings output file.',
-)
-
-flags.DEFINE_string(
-    'accounts_output',
-    'accounts.jsonlines',
-    'The Merchant Center accounts output file.',
-)
-
-flags.DEFINE_string(
-    'shippingsettings_output',
-    'shippingsettings.jsonlines',
-    'The Merchant Center shipping settings output file.',
 )
 
 
@@ -99,10 +89,9 @@ def combine_campaign_settings(
   Returns:
     A combined campaign settings PCollection.
   """
-  # pylint: disable=g-bad-todo
+
   # TODO: https://github.com/apache/beam/issues/20825
   # Remove pyright ignore annotation.
-  # pylint: enable=g-bad-todo
   return (  # pyright: ignore [reportReturnType]
       {
           'campaigns':
@@ -209,98 +198,6 @@ def main(argv):
           always_print_fields_with_no_presence=True,
           preserving_proto_field_name=True,
       )
-
-    def convert_accounts(row):
-      """Parses one aggregated v1 account into the `accounts` table shape.
-
-      `merchant_accounts.download_accounts` writes the native v1 shape; the row
-      layout is defined once as `schema_pb2.Account`, which also generates the
-      BigQuery schema. Parsing here rather than in the downloader keeps
-      `schema_pb2` out of the process that loads the Merchant API client:
-      `schema.proto` imports the googleapis `accounts/v1` protos, so their
-      generated `*_pb2` modules declare
-      `google.shopping.merchant.accounts.v1` -- the same package the client
-      registers from its own file paths -- and importing both raises
-      `TypeError` from the descriptor pool.
-
-      `ignore_unknown_fields` drops any not-yet-modeled v1 attribute instead of
-      failing the parse.
-
-      Args:
-        row: A native-shape account dict, as read from
-          `merchant_center/*/accounts/*.jsonlines`.
-
-      Returns:
-        A dict matching the generated BigQuery `accounts` schema.
-      """
-      msg = schema_pb2.Account()
-      json_format.ParseDict(row, msg, ignore_unknown_fields=True)
-      return json_format.MessageToDict(
-          msg,
-          always_print_fields_with_no_presence=True,
-          preserving_proto_field_name=True,
-      )
-
-    # Process accounts
-    _ = (
-        p
-        | 'Glob Accounts files' >> fileio.MatchFiles(
-            file_pattern=(
-                f'{source_dir}/merchant_center/*/accounts/*.jsonlines'),
-            empty_match_treatment=fileio.EmptyMatchTreatment.
-            ALLOW_IF_WILDCARD,
-        )
-        | 'Read Accounts' >> textio.ReadAllFromText()
-        | 'Accounts to JSON' >> beam.Map(json.loads)
-        | 'Accounts to table format' >> beam.Map(convert_accounts)
-        | 'Accounts back to JSON' >> beam.Map(json.dumps)
-        | 'Output Accounts' >> textio.WriteToText(
-            flags.FLAGS.accounts_output))
-
-    def convert_shipping_settings(row):
-      """Parses one account's v1 shipping settings into the table shape.
-
-      `merchant_shipping.download_shipping_settings` writes the native v1 shape;
-      the row layout is defined once as `schema_pb2.ShippingSettings`, which
-      also generates the BigQuery schema. As with accounts, parsing here rather
-      than in the downloader keeps `schema_pb2` out of the process that loads
-      the Merchant API GAPIC.
-
-      `ignore_unknown_fields` drops the stamped `downloaderMetadata` (and any
-      not-yet-modeled v1 attribute) instead of failing the parse.
-
-      Args:
-        row: A native-shape shipping settings dict, as read from
-          `merchant_center/*/shippingsettings/*.jsonlines`.
-
-      Returns:
-        A dict matching the generated BigQuery `shippingsettings` schema.
-      """
-      msg = schema_pb2.ShippingSettings()
-      json_format.ParseDict(row, msg, ignore_unknown_fields=True)
-      return json_format.MessageToDict(
-          msg,
-          always_print_fields_with_no_presence=True,
-          preserving_proto_field_name=True,
-      )
-
-    # Process shipping settings
-    _ = (
-        p
-        | 'Glob Shipping Settings files' >> fileio.MatchFiles(
-            file_pattern=(
-                f'{source_dir}/merchant_center/*/shippingsettings/'
-                '*.jsonlines'),
-            empty_match_treatment=fileio.EmptyMatchTreatment.
-            ALLOW_IF_WILDCARD,
-        )
-        | 'Read Shipping Settings' >> textio.ReadAllFromText()
-        | 'Shipping Settings to JSON' >> beam.Map(json.loads)
-        | 'Shipping Settings to table format' >> beam.Map(
-            convert_shipping_settings)
-        | 'Shipping Settings back to JSON' >> beam.Map(json.dumps)
-        | 'Output Shipping Settings' >> textio.WriteToText(
-            flags.FLAGS.shippingsettings_output))
 
     # Process LIA settings
     _ = (
@@ -417,69 +314,36 @@ def main(argv):
         products
         | 'Build wide product records' >> beam.Map(split_v1_product))
 
-    def attach_pmax_campaign_ids(
-        product_row: schema_pb2.WideProduct,
-        campaign_ids: list[int],
-    ) -> schema_pb2.WideProduct:
-      """Records which Performance Max campaigns target this product.
+    def products_table_row(tup):
+      """Prepare data for JSON serialization."""
+      # Tup is (product, shopping_campaign_ids) where product was already
+      # processed by PMax Combine.
+      product_obj, shopping_campaign_ids = tup
+      import copy
+      product_obj_copy = copy.deepcopy(product_obj)
+      product_obj_copy.has_shopping_targeting = (
+          True if shopping_campaign_ids else False)
+      del product_obj_copy.shopping_campaign_ids[:]
+      product_obj_copy.shopping_campaign_ids.extend(
+          [int(cid) for cid in shopping_campaign_ids])
 
-      Args:
-        product_row: The wide product record to annotate.
-        campaign_ids: IDs of the PMax campaigns whose asset group listing
-          filters matched this product. Empty if none matched.
+      return json_format.MessageToDict(product_obj_copy,
+                                       preserving_proto_field_name=True)
 
-      Returns:
-        A copy of `product_row` with the PMax targeting fields populated.
-      """
-      annotated = copy.deepcopy(product_row)
-      annotated.has_performance_max_targeting = (
-          True if campaign_ids else False)
-      del annotated.performance_max_campaign_ids[:]
-      annotated.performance_max_campaign_ids.extend(
-          [int(cid) for cid in campaign_ids])
-      return annotated
+    def pmax_combine_row(tup):
+      # Tup is (product, pmax_campaign_ids)
+      product_obj, pmax_campaign_ids = tup
+      import copy
+      product_obj_copy = copy.deepcopy(product_obj)
+      product_obj_copy.has_performance_max_targeting = (
+          True if pmax_campaign_ids else False)
+      del product_obj_copy.performance_max_campaign_ids[:]
+      product_obj_copy.performance_max_campaign_ids.extend(
+          [int(cid) for cid in pmax_campaign_ids])
+      return product_obj_copy
 
-    def attach_shopping_campaign_ids(
-        product_row: schema_pb2.WideProduct,
-        campaign_ids: list[int],
-    ) -> schema_pb2.WideProduct:
-      """Records which Shopping campaigns target this product.
-
-      Args:
-        product_row: The wide product record to annotate. Already carries its
-          Performance Max targeting from `attach_pmax_campaign_ids`.
-        campaign_ids: IDs of the Shopping campaigns whose listing group trees
-          matched this product. Empty if none matched.
-
-      Returns:
-        A copy of `product_row` with the Shopping targeting fields populated.
-      """
-      annotated = copy.deepcopy(product_row)
-      annotated.has_shopping_targeting = True if campaign_ids else False
-      del annotated.shopping_campaign_ids[:]
-      annotated.shopping_campaign_ids.extend(
-          [int(cid) for cid in campaign_ids])
-      return annotated
-
-    def to_products_table_row(
-        product_row: schema_pb2.WideProduct,
-    ) -> dict[str, Any]:
-      """Converts a fully annotated WideProduct into a `products` table row.
-
-      Args:
-        product_row: The wide product record, carrying Merchant Center data,
-          the derived status flags, and both Shopping and PMax targeting.
-
-      Returns:
-        A JSON-serializable dict matching the generated BigQuery `products`
-        schema (snake_case field names).
-      """
-      return json_format.MessageToDict(
-          product_row, preserving_proto_field_name=True)
-
-    # `attach_pmax_campaign_ids` runs between the PMax and Shopping targeting
-    # stages so the Shopping stage receives a WideProduct message rather than
-    # the (product, trees) tuple that `get_campaign_targeting` emits.
+    # Hook pmax_combine_row between the PMax and Shopping
+    # targeting stages to pass proto correctly
     all_products_pmax = (
         product_statuses
         | 'Approved' >> beam.Map(product.set_product_approved)
@@ -496,8 +360,7 @@ def main(argv):
                 product,
                 sorted(list(set([int(t['campaign_id']) for t in trees])))
             ))
-        | 'Attach PMax campaign IDs' >> beam.MapTuple(
-            attach_pmax_campaign_ids)
+        | 'Combine PMax targeting to proto' >> beam.Map(pmax_combine_row)
         | 'Get Shopping targeting' >> beam.FlatMap(
             product.get_campaign_targeting,
             pvalue.AsDict(shopping_trees_by_campaign_id),
@@ -513,9 +376,8 @@ def main(argv):
     )
 
     _ = (all_products_pmax
-         | 'Attach Shopping campaign IDs' >> beam.MapTuple(
-             attach_shopping_campaign_ids)
-         | 'Convert to products table row' >> beam.Map(to_products_table_row)
+         | 'Convert to final products table output' >>
+         beam.Map(products_table_row)
          | 'JSON' >> beam.Map(json.dumps)
          | textio.WriteToText(flags.FLAGS.products_output))
 
