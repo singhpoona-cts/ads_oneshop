@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from absl.testing import absltest
 from absl.testing import parameterized
 
 from acit import performance_max
@@ -19,4 +20,10 @@ from acit import product as product_category
 
 
 class PerformanceMaxTest(parameterized.TestCase):
-  pass
+  def test_dummy(self):
+    pass
+
+
+if __name__ == '__main__':
+  absltest.main()
+

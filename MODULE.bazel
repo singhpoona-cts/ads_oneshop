@@ -14,7 +14,7 @@
 
 module(name = "ads_oneshop")
 
-bazel_dep(name = "rules_python", version = "1.5.3")
+bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "protobuf", version = "29.5")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 bazel_dep(name = "rules_oci", version = "2.2.6")
@@ -25,28 +25,23 @@ bazel_dep(name = "bazel_skylib", version = "1.8.1")
 bazel_dep(name = "rules_shell", version = "0.6.0")
 bazel_dep(name = "toolchains_protoc", version = "0.5.0")
 bazel_dep(name = "bazel_lib", version = "3.1.0")
+bazel_dep(name = "googleapis", version = "0.0.0-20260728-b8486a2f")
 
-git_override(
-    # See https://github.com/bazel-contrib/rules_python/issues/3187
-    module_name = "rules_python",
-    commit = "a791d045a3969cb8476e19cb3be45068026c2428",
-    remote = "https://github.com/rickeylev/rules_python",
-)
-
-python_version = "3.12.11"
+python_version = "3.13"
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.defaults(python_version = python_version)
 python.toolchain(python_version = python_version)
-use_repo(python, my_toolchain = "python_3_12")
+use_repo(python, my_toolchain = "python_3_13")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    # copybara:strip_begin
-    # NOTE: need to update ~/.bazelrc with the following content:
-    #   common --credential_helper=us-python.pkg.dev=%workspace%/cred_helper.sh
+    # # copybara:strip_begin
+    # # NOTE: need to update ~/.bazelrc with the following content:
+    # #   common --credential_helper=us-python.pkg.dev=%workspace%/cred_helper.sh
     # experimental_index_url = "https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple/",
-    # copybara:strip_end
+    # extra_pip_args = ["--index-url", "https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple/"],
+    # # copybara:strip_end
     hub_name = "acit_deps",
     python_version = python_version,
     requirements_lock = "//:requirements_lock.txt",
@@ -79,8 +74,8 @@ oci.toolchains(name = "oci_tools")
 oci.pull(
     name = "oci_beam_python",
     # 2.69.0
-    digest = "sha256:41a537fe74ea4ac41d4754ec33a832442a9ff40233ddfa412ec457196be0bbe7",
-    image = "docker.io/apache/beam_python3.12_sdk",
+    digest = "sha256:10cf8bedf0a3e28095159cf7c94d4d33fef8b57877f20f46fcd0ac16644333d6",
+    image = "docker.io/apache/beam_python3.13_sdk",
     platforms = [
         "linux/amd64",
     ],

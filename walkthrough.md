@@ -329,6 +329,42 @@ export IMAGES_REPO="$(terraform -chdir=infra/ output -json images_repo | jq -r)"
 ```
 
 
+## Upgrading an existing installation
+
+Skip this step if this is a **new** deployment into an empty dataset.
+
+If you are upgrading an installation that ran a previous (Content API) version
+of Ads OneShop against the same BigQuery dataset, you must drop two tables
+before the first run.
+
+The Merchant API migration changed `liasettings` and `shippingsettings` from the
+old nested `{settings, children[]}` shape to a flat, one-row-per-account shape.
+Merchant Excellence creates these two tables with
+`CREATE TABLE IF NOT EXISTS`, so a table left over from the previous version is
+**not** replaced — it keeps its old nested schema, and the Merchant Excellence
+queries then fail with errors such as
+`Unrecognized name: omnichannel_settings` or
+`Name account_id not found`.
+
+Run the following once, before `./run_job.sh`:
+
+```sh
+source env.sh
+export GOOGLE_CLOUD_PROJECT="$(gcloud config get project)"
+bq --project_id="${GOOGLE_CLOUD_PROJECT}" rm -f -t "${DATASET_NAME}.liasettings"
+bq --project_id="${GOOGLE_CLOUD_PROJECT}" rm -f -t "${DATASET_NAME}.shippingsettings"
+```
+
+Both tables are rebuilt from scratch on the next run, so no data is lost. This
+is safe to run even if the tables do not exist.
+
+NOTE: if you deploy with `ADMIN="true"`, the pipeline already reloads both
+tables with the correct schema on every run and would recover on its own.
+Dropping them is still the recommended, unambiguous fix, and is required when
+`ADMIN="false"` — in that case the pipeline never writes these tables, so a
+stale one would persist indefinitely.
+
+
 ## Running and scheduling
 
 To run, run the command

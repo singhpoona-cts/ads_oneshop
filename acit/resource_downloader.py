@@ -23,6 +23,7 @@ from typing import cast, Dict, Any, Iterable, Callable
 
 import json
 import sys
+from acit.constants import METADATA_KEY
 from google import auth
 
 _API_NAME = flags.DEFINE_string('api_name', '', 'The discovery API name to use')
@@ -75,8 +76,6 @@ _RESULT_PATH = flags.DEFINE_string(
     'resources',
     'The path to the results in the response object.',
 )
-
-METADATA_KEY = 'downloaderMetadata'
 
 _NUM_RETRIES = 3
 

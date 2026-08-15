@@ -11,30 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Shared constants for ACIT downloaders and ingestion pipelines."""
 
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-
-filegroup(
-    name = "sql",
-    srcs = glob(["*.sql"]),
-)
-
-# TODO(cbartz): model code
-
-sh_binary(
-    name = "run_mex",
-    srcs = [
-        "run_mex.sh",
-    ],
-    data = [
-        ":sql",
-        "//benchmark:benchmark_details.csv",
-        "//benchmark:benchmark_values.csv",
-    ],
-    use_bash_launcher = True,
-    visibility = ["//acit:__subpackages__"],
-    deps = [
-        "//acit:bq_lib",
-        "@bazel_tools//tools/bash/runfiles",
-    ],
-)
+# Key stamped onto every row so downstream code knows the source account.
+METADATA_KEY = 'downloaderMetadata'

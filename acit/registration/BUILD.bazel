@@ -16,28 +16,34 @@ load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 
+package(default_visibility = ["//acit:__subpackages__"])
+
 py_library(
-  name = "generate_test_data_lib",
-  srcs = ["generate_test_data.py"],
-  deps = [
-      "//acit:constants_lib",
-      "@acit_deps//absl_py",
-      "@acit_deps//google_ads",
-  ],
+    name = "register_gcp_lib",
+    srcs = ["register_gcp.py"],
+    deps = [
+        "//acit/auth:oauth_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+        "@acit_deps//google_shopping_merchant_accounts",
+    ],
 )
 
 py_binary(
-  name = "generate_test_data",
-  srcs = ["generate_test_data.py"],
-  deps = [":generate_test_data_lib"],
+    name = "register_gcp",
+    srcs = ["register_gcp.py"],
+    deps = [
+        ":register_gcp_lib",
+    ],
 )
 
 py_test(
-  name = "generate_test_data_test",
-  main = "test_generate_test_data.py",
-  srcs = ["test_generate_test_data.py"],
-  deps = [
-      ":generate_test_data_lib",
-      "@acit_deps//absl_py",
-  ],
+    name = "register_gcp_test",
+    main = "test_register_gcp.py",
+    srcs = ["test_register_gcp.py"],
+    deps = [
+        ":register_gcp_lib",
+        "@acit_deps//absl_py",
+        "@acit_deps//etils",
+    ],
 )

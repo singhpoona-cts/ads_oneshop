@@ -12,185 +12,81 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+-- Native Merchant API v1 omnichannel settings. FLAT shape -- one row per
+-- (sub-/standalone) account with a repeated per-region `omnichannel_settings`
+-- list (the old {settings, children[]} envelope is gone). Mirrors the proto
+-- `OmnichannelLiaSettings` (acit/api/v0/storage/schema.proto); the production
+-- table is created from the generated `liasettings.schema`, so this fallback DDL
+-- only needs to match column names/types.
 CREATE TABLE IF NOT EXISTS ${PROJECT_NAME}.${DATASET_NAME}.liasettings (
-    settings STRUCT<
-        account_id INT64,
-        country_settings ARRAY<
-            STRUCT<
-                country STRING,
-                inventory STRUCT<
-                    status STRING,
-                    inventory_verification_contact_name STRING,
-                    inventory_verification_contact_email STRING,
-                    inventory_verification_contact_status STRING
-                >,
-                on_display_to_order STRUCT<
-                    status STRING,
-                    shipping_cost_policy_url STRING
-                >,
-                hosted_local_storefront_active BOOL,
-                store_pickup_active BOOL,
-                about STRUCT<
-                    status STRING,
-                    url STRING
-                >,
-                pos_data_provider STRUCT<
-                    pos_data_provider_id INT64,
-                    pos_external_account_id STRING
-                >,
-                omnichannel_experience STRUCT<
-                    country STRING,
-                    lsf_type STRING,
-                    pickup_types ARRAY<STRING>
-                >
-            >
-        >,
-        kind STRING
-    >,
-    children ARRAY<
+    account_id INT64,
+    omnichannel_settings ARRAY<
         STRUCT<
-            account_id INT64,
-            country_settings ARRAY<
-                STRUCT<
-                    country STRING,
-                    inventory STRUCT<
-                        status STRING,
-                        inventory_verification_contact_name STRING,
-                        inventory_verification_contact_email STRING,
-                        inventory_verification_contact_status STRING
-                    >,
-                    on_display_to_order STRUCT<
-                        status STRING,
-                        shipping_cost_policy_url STRING
-                    >,
-                    hosted_local_storefront_active BOOL,
-                    store_pickup_active BOOL,
-                    about STRUCT<
-                        status STRING,
-                        url STRING
-                    >,
-                    pos_data_provider STRUCT<
-                        pos_data_provider_id INT64,
-                        pos_external_account_id STRING
-                    >,
-                    omnichannel_experience STRUCT<
-                        country STRING,
-                        lsf_type STRING,
-                        pickup_types ARRAY<STRING>
-                    >
-                >
+            name STRING,
+            region_code STRING,
+            lsf_type STRING,
+            in_stock STRUCT<uri STRING, state STRING>,
+            pickup STRUCT<uri STRING, state STRING>,
+            lfp_link STRUCT<
+                lfp_provider STRING,
+                external_account_id STRING,
+                state STRING
             >,
-            kind STRING
+            odo STRUCT<uri STRING, state STRING>,
+            about STRUCT<uri STRING, state STRING>,
+            inventory_verification STRUCT<
+                state STRING,
+                contact STRING,
+                contact_email STRING,
+                contact_state STRING
+            >
         >
     >
 );
 
 CREATE TABLE IF NOT EXISTS ${PROJECT_NAME}.${DATASET_NAME}.shippingsettings (
-    children ARRAY<
+    account_id INT64,
+    services ARRAY<
         STRUCT<
-            settings STRUCT<
-                accountId INT64,
-                services ARRAY<
-                    STRUCT<
-                        deliveryTime STRUCT<
-                            handlingBusinessDayConfig STRUCT<businessDays ARRAY<STRING>>,
-                            maxTransitTimeInDays INT64,
-                            minTransitTimeInDays INT64,
-                            maxHandlingTimeInDays INT64,
-                            minHandlingTimeInDays INT64,
-                            cutoffTime STRUCT<timezone STRING, minute INT64, hour INT64>
-                        >,
-                        rateGroups ARRAY<
-                            STRUCT<
-                                applicableShippingLabels ARRAY<STRING>,
-                                name STRING,
-                                mainTable STRUCT<
-                                    name STRING,
-                                    `rows` ARRAY<
-                                        STRUCT<
-                                            cells ARRAY<
-                                                STRUCT<
-                                                    flatRate STRUCT<currency STRING, value FLOAT64>
-                                                >
-                                            >
-                                        >
-                                    >,
-                                    rowHeaders STRUCT<
-                                        prices ARRAY<
-                                            STRUCT<currency STRING, value FLOAT64>
-                                        >
-                                    >,
-                                    columnHeaders STRUCT<
-                                        prices ARRAY<
-                                            STRUCT<currency STRING, value FLOAT64>
-                                        >
-                                    >
-                                >,
-                                singleValue STRUCT<
-                                    flatRate STRUCT<currency STRING, value FLOAT64>
-                                >
-                            >
-                        >,
-                        eligibility STRING,
-                        shipmentType STRING,
-                        currency STRING,
-                        deliveryCountry STRING,
-                        active BOOL,
-                        name STRING
-                    >
-                >
-            >
-        >
-    >,
-    settings STRUCT<
-        accountId INT64,
-        services ARRAY<
-            STRUCT<
-                deliveryTime STRUCT<
-                    handlingBusinessDayConfig STRUCT<businessDays ARRAY<STRING>>,
-                    maxTransitTimeInDays INT64,
-                    minTransitTimeInDays INT64,
-                    maxHandlingTimeInDays INT64,
-                    minHandlingTimeInDays INT64,
-                    cutoffTime STRUCT<timezone STRING, minute INT64, hour INT64>
-                >,
-                rateGroups ARRAY<
-                    STRUCT<
-                        applicableShippingLabels ARRAY<STRING>,
+            service_name STRING,
+            active BOOL,
+            delivery_countries ARRAY<STRING>,
+            currency_code STRING,
+            shipment_type STRING,
+            delivery_time STRUCT<
+                min_transit_days INT64,
+                max_transit_days INT64,
+                min_handling_days INT64,
+                max_handling_days INT64,
+                cutoff_time STRUCT<hour INT64, minute INT64, time_zone STRING>,
+                handling_business_day_config STRUCT<business_days ARRAY<STRING>>
+            >,
+            rate_groups ARRAY<
+                STRUCT<
+                    applicable_shipping_labels ARRAY<STRING>,
+                    name STRING,
+                    single_value STRUCT<
+                        flat_rate STRUCT<amount_micros INT64, currency_code STRING>
+                    >,
+                    main_table STRUCT<
                         name STRING,
-                        mainTable STRUCT<
-                            name STRING,
-                            `rows` ARRAY<
-                                STRUCT<
-                                    cells ARRAY<
-                                        STRUCT<
-                                            flatRate STRUCT<currency STRING, value FLOAT64>
-                                        >
+                        `rows` ARRAY<
+                            STRUCT<
+                                cells ARRAY<
+                                    STRUCT<
+                                        flat_rate STRUCT<amount_micros INT64, currency_code STRING>
                                     >
-                                >
-                            >,
-                            rowHeaders STRUCT<
-                                prices ARRAY<
-                                    STRUCT<currency STRING, value FLOAT64>
-                                >
-                            >,
-                            columnHeaders STRUCT<
-                                prices ARRAY<
-                                    STRUCT<currency STRING, value FLOAT64>
                                 >
                             >
                         >,
-                        singleValue STRUCT<
-                            flatRate STRUCT<currency STRING, value FLOAT64>
+                        row_headers STRUCT<
+                            prices ARRAY<STRUCT<amount_micros INT64, currency_code STRING>>
+                        >,
+                        column_headers STRUCT<
+                            prices ARRAY<STRUCT<amount_micros INT64, currency_code STRING>>
                         >
                     >
-                >,
-                eligibility STRING,
-                shipmentType STRING,
-                currency STRING,
-                deliveryCountry STRING,
-                active BOOL,
-                name STRING
+                >
             >
         >
     >
