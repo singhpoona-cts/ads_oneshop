@@ -33,8 +33,27 @@ token if you do not have one already.
 
 Enable the required APIs for this project.
 
-<walkthrough-enable-apis apis="serviceusage.googleapis.com,iam.googleapis.com,googleads.googleapis.com,shoppingcontent.googleapis.com,cloudresourcemanager.googleapis.com">
+<walkthrough-enable-apis apis="serviceusage.googleapis.com,iam.googleapis.com,googleads.googleapis.com,merchantapi.googleapis.com,shoppingcontent.googleapis.com,cloudresourcemanager.googleapis.com">
 </walkthrough-enable-apis>
+
+
+## Install Required Tools
+
+Terraform and Bazel are required for the deployment but are no longer
+pre-installed in the default Cloud Shell environment. Run the following
+commands to install them:
+
+1.  **Install Bazel (via Bazelisk):**
+    ```sh
+    npm install -g @bazel/bazelisk
+    ```
+
+1.  **Install Terraform:**
+    ```sh
+    wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+    sudo apt update && sudo apt install terraform
+    ```
 
 
 ## Configure OAuth Consent Screen
@@ -244,6 +263,27 @@ Finally, open
   google_ads_developer_token.txt
 </walkthrough-editor-open-file>
 and paste your Google Ads Developer Token there. Save the file.
+
+
+## Register GCP Project with Merchant Center
+
+The Merchant API requires the Cloud project used for authentication to be
+registered with your Merchant Center account (a one-time setup). This must be
+done by a user with **Admin** access to the Merchant Center account.
+
+Run the following command to perform the registration:
+
+```sh
+bazel run //acit/registration:register_gcp -- \
+  --account_id="<YOUR_MERCHANT_CENTER_ACCOUNT_ID>" \
+  --developer_email="<MERCHANT_CENTER_ADMIN_EMAIL>" \
+  --client_secrets_path=$PWD/client_secrets.json \
+  --refresh_token_path=$PWD/refresh_token.txt
+```
+
+NOTE: If you are using the Service Account flow, you can omit the
+`--client_secrets_path` and `--refresh_token_path` flags, and the tool will
+attempt to use Application Default Credentials (ADC).
 
 
 ## Set up cloud environment

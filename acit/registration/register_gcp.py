@@ -26,6 +26,7 @@ from absl import logging
 from acit.auth import oauth
 from etils import epath
 from google import auth
+from google.api_core import exceptions as gax_exceptions
 from google.auth import credentials
 from google.oauth2 import credentials as oauth_credentials
 from google.shopping import merchant_accounts_v1
@@ -63,6 +64,11 @@ def get_credentials(
     refresh_token_path: epath.Path,
 ) -> credentials.Credentials:
   """Get credentials using env vars, config files, or App Default Credentials."""
+  access_token = os.environ.get('GOOGLE_ADS_ACCESS_TOKEN', '').strip()
+  if access_token:
+    logging.info('Using raw access token from environment.')
+    return oauth_credentials.Credentials(token=access_token)
+
   refresh_token = os.environ.get('GOOGLE_ADS_REFRESH_TOKEN', '').strip()
   client_id = os.environ.get('GOOGLE_ADS_CLIENT_ID', '').strip()
   client_secret = os.environ.get('GOOGLE_ADS_CLIENT_SECRET', '').strip()
@@ -111,9 +117,19 @@ def register_gcp_project(
       name=f'accounts/{account_id}/developerRegistration',
       developer_email=developer_email,
   )
-  response = client.register_gcp(request=request)
-  logging.info('Successfully registered GCP project. Response: %s', response)
-  print(f'Registration successful! Response Details:\n{response}')
+  try:
+    response = client.register_gcp(request=request)
+    logging.info('Successfully registered GCP project. Response: %s', response)
+    print(f'Registration successful! Response Details:\n{response}')
+  except gax_exceptions.AlreadyExists:
+    logging.info('GCP project already registered. Fetching details...')
+    try:
+      existing = client.get_account_for_gcp_registration(request={})
+      print(f'GCP project is already registered to: {existing.name}')
+      logging.info('Existing registration: %s', existing)
+    except Exception as e:
+      logging.error('Could not fetch existing registration details: %s', e)
+      raise
 
 
 def main(argv: Sequence[str]) -> None:

@@ -22,6 +22,7 @@ from absl.testing import flagsaver
 from acit.registration import register_gcp
 from etils import epath
 from google.auth import credentials
+from google.api_core import exceptions as gax_exceptions
 from google.shopping import merchant_accounts_v1
 
 
@@ -122,6 +123,32 @@ class RegisterGcpTest(absltest.TestCase):
         developer_email=developer_email,
     )
     mock_register_gcp.assert_called_once_with(request=expected_request)
+
+  @mock.patch.object(merchant_accounts_v1.DeveloperRegistrationServiceClient,
+                     'get_account_for_gcp_registration')
+  @mock.patch.object(merchant_accounts_v1.DeveloperRegistrationServiceClient,
+                     'register_gcp')
+  def test_register_gcp_project_already_exists(
+      self, mock_register_gcp, mock_get_existing
+  ):
+    """Verifies handling of already registered projects."""
+
+    mock_creds = mock.create_autospec(credentials.Credentials, instance=True)
+    account_id = '123456789'
+    developer_email = 'admin@example.com'
+
+    # Mock AlreadyExists exception
+    mock_register_gcp.side_effect = gax_exceptions.AlreadyExists('Duplicate')
+
+    # Mock the return value of get_account_for_gcp_registration
+    expected_existing = mock.Mock()
+    expected_existing.name = f'accounts/{account_id}'
+    mock_get_existing.return_value = expected_existing
+
+    register_gcp.register_gcp_project(account_id, developer_email, mock_creds)
+
+    mock_register_gcp.assert_called_once()
+    mock_get_existing.assert_called_once_with(request={})
 
   def test_main_missing_account_id(self):
     """Verifies the main function fails when account_id flag is missing."""

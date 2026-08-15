@@ -50,30 +50,6 @@ The Ads OneShop project contains two solutions:
 *   At least standard access to the Merchant Center account, but Admin is preferable, as it would allow more data to be ingested.
 *   Google Ads & Google Merchant Center accounts must be linked together.
 
-#### Merchant API
-
-*   Enable the [Merchant API](https://console.cloud.google.com/apis/library/merchantapi.googleapis.com) in your Google Cloud project.
-*   Authorize access using OAuth 2.0 with the `https://www.googleapis.com/auth/content` scope. See the [Merchant API authorization overview](https://developers.google.com/merchant/api/guides/authorization/overview) for details.
-*   **Register your Google Cloud project with the Merchant Center account.** The Merchant API requires the Cloud project used for authentication to be registered with your Merchant Center account (a one-time setup via the [developer registration](https://developers.google.com/merchant/api/guides/quickstart/registration) `registerGcp` call). This must be done by a user with **Admin** access, and each Cloud project can be registered with only one Merchant Center account.
-
-    To make this registration process seamless, the project includes a registration utility tool. You can run it with Bazel or directly using Python:
-
-    *   **Using Bazel:**
-        ```bash
-        bazel run //acit/registration:register_gcp -- \
-          --account_id="<YOUR_MERCHANT_CENTER_ACCOUNT_ID>" \
-          --developer_email="<MERCHANT_CENTER_ADMIN_EMAIL>"
-        ```
-
-    *   **Using Python directly:**
-        ```bash
-        python -m acit.registration.register_gcp \
-          --account_id="<YOUR_MERCHANT_CENTER_ACCOUNT_ID>" \
-          --developer_email="<MERCHANT_CENTER_ADMIN_EMAIL>"
-        ```
-
-    By default, the tool automatically attempts to read OAuth credentials from `client_secrets.json` and `refresh_token.txt` in the current working directory, or from environment variables (`GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, and `GOOGLE_ADS_REFRESH_TOKEN`). If none of these are found, it will fall back to using Application Default Credentials (ADC).
-
 ### Core Pipeline Deployment
 
 Click here to open the [tutorial in Google Cloud Shell](https://console.cloud.google.com/?cloudshell=true&cloudshell_git_repo=https://github.com/google/ads_oneshop&cloudshell_tutorial=walkthrough.md).
