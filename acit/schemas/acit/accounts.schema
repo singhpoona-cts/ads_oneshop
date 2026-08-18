@@ -253,5 +253,26 @@
         ]
       }
     ]
+  },
+  {
+    "name": "programs",
+    "type": "RECORD",
+    "mode": "REPEATED",
+    "fields": [
+      { "name": "name", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "documentation_uri", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "state", "type": "STRING", "mode": "NULLABLE" },
+      { "name": "active_region_codes", "type": "STRING", "mode": "REPEATED" },
+      {
+        "name": "unmet_requirements",
+        "type": "RECORD",
+        "mode": "REPEATED",
+        "fields": [
+          { "name": "title", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "documentation_uri", "type": "STRING", "mode": "NULLABLE" },
+          { "name": "affected_region_codes", "type": "STRING", "mode": "REPEATED" }
+        ]
+      }
+    ]
   }
 ]

@@ -84,7 +84,7 @@ WITH
   ProductStatus AS (
     SELECT
       account_id AS merchant_id,
-      P.channel,
+      COALESCE(P.channel, P.product.channel, 'online') AS channel,
       offer_id AS product_id,
       P.status.item_level_issues,
       ARRAY(
@@ -224,6 +224,8 @@ WITH
       P.product.product_attributes.shipping,
       P.product.product_attributes.lifestyle_image_links,
       P.product.product_attributes.cost_of_goods_sold,
+      P.product.product_attributes.condition,
+      JSON_QUERY(TO_JSON(P.product.product_attributes), '$.installment') AS installment,
       (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
       IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
       IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,
@@ -762,6 +764,30 @@ WITH
     WHERE
       IFNULL(cost_of_goods_sold.amount_micros, 0) = 0
   ),
+  OffersWithTitle15 AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id, channel, item_id, targeted_country, language,
+      '% items with short title' AS metric_name,
+      'title length < 15' AS data_quality_flag
+    FROM Products
+    WHERE LENGTH(title) < 15
+  ),
+  OffersWithUsedCondition AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id, channel, item_id, targeted_country, language,
+      '% items with used condition' AS metric_name,
+      'condition is not NEW' AS data_quality_flag
+    FROM Products
+    WHERE UPPER(IFNULL(condition, 'NEW')) != 'NEW'
+  ),
+  OffersWithInstallment AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id, channel, item_id, targeted_country, language,
+      '% items with installment' AS metric_name,
+      'no installment' AS data_quality_flag
+    FROM Products
+    WHERE installment IS NULL OR TO_JSON_STRING(installment) = 'null'
+  ),
   AllMetrics AS (
     SELECT * FROM DisapprovedOffers
     UNION ALL
@@ -824,6 +850,12 @@ WITH
     SELECT * FROM OffersWithDuplicateTitles
     UNION ALL
     SELECT * FROM OffersWithCostOfGoodsSold
+    UNION ALL
+    SELECT * FROM OffersWithTitle15
+    UNION ALL
+    SELECT * FROM OffersWithUsedCondition
+    UNION ALL
+    SELECT * FROM OffersWithInstallment
   )
 SELECT
   CURRENT_DATE() AS extraction_date,

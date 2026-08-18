@@ -26,6 +26,7 @@ import "google/shopping/merchant_accounts_v1/types/businessidentity.proto";
 import "google/shopping/merchant_accounts_v1/types/businessinfo.proto";
 import "google/shopping/merchant_accounts_v1/types/homepage.proto";
 import "google/shopping/merchant_accounts_v1/types/omnichannelsettings.proto";
+import "google/shopping/merchant_accounts_v1/types/programs.proto";
 import "google/shopping/merchant_accounts_v1/types/shippingsettings.proto";
 import "google/shopping/merchant_accounts_v1/types/user.proto";
 import "google/type/datetime.proto";
@@ -135,4 +136,5 @@ message Account {
   repeated google.shopping.merchant.accounts.v1.User users = 13;
   repeated google.shopping.merchant.accounts.v1.AccountRelationship account_relationships = 14;
   repeated AccountServiceRow account_services = 15;
+  repeated google.shopping.merchant.accounts.v1.Program programs = 16;
 }

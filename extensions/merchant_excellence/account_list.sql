@@ -113,6 +113,15 @@ WITH
       ${PROJECT_NAME}.${DATASET_NAME}.products AS P,
       P.status.destination_statuses AS DS
   ),
+  ProductFeatures AS (
+    SELECT
+      CAST(account_id AS INT64) AS merchant_id,
+      LOGICAL_OR(JSON_VALUE(TO_JSON(product.product_attributes), '$.ads_redirect') IS NOT NULL AND JSON_VALUE(TO_JSON(product.product_attributes), '$.ads_redirect') != '') AS has_ads_redirect,
+      LOGICAL_OR(JSON_VALUE(TO_JSON(product.product_attributes), '$.video_link') IS NOT NULL AND JSON_VALUE(TO_JSON(product.product_attributes), '$.video_link') != '') AS has_valid_video_link,
+      LOGICAL_OR(ARRAY_LENGTH(JSON_QUERY_ARRAY(TO_JSON(product.product_attributes), '$.loyalty_programs')) > 0) AS has_loyalty_member_pricing_activated
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.products
+    GROUP BY 1
+  ),
   AllAccounts AS (
     -- Flat Merchant API v1 accounts: one row per (leaf) account. Advanced/MCA
     -- accounts are excluded as merchants (is_advanced); the parent account is
@@ -151,6 +160,37 @@ WITH
       CONCAT(A.merchant_name, ' (', A.merchant_id, ')') AS merchant_name_with_id
     FROM AllAccounts AS A
   ),
+  AccountPrograms AS (
+    SELECT
+      CAST(account_id AS INT64) AS merchant_id,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('local-inventory-ads', 'local_inventory_ads')
+        AND prog.state IN ('ENABLED', 'ELIGIBLE')
+      ) AS is_lia_ready_or_started,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('local-inventory-ads', 'local_inventory_ads')
+        AND prog.state = 'ENABLED'
+      ) AS is_lia_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('promotions')
+        AND prog.state = 'ENABLED'
+      ) AS has_merchant_promotions_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('product-reviews', 'product_reviews')
+        AND prog.state = 'ENABLED'
+      ) AS has_product_reviews_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('checkout', 'shopping-actions', 'shopping_actions')
+        AND prog.state = 'ENABLED'
+      ) AS has_checkout_on_merchant_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('checkout', 'shopping-actions', 'shopping_actions')
+        AND (ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(TO_JSON(prog), '$.unmet_requirements'), [])) = 0 OR prog.state = 'ENABLED')
+      ) AS has_cwcd_implemented
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
+    LEFT JOIN UNNEST(A.programs) AS prog
+    GROUP BY 1
+  ),
   Account AS (
     SELECT DISTINCT
       A.merchant_id,
@@ -166,6 +206,15 @@ WITH
       IFNULL(ALS.has_account_level_shipping_speed, FALSE) AS has_account_level_shipping_speed,
       IFNULL(ALS.has_account_level_fast_shipping, FALSE) AS has_account_level_fast_shipping,
       IFNULL(ALS.has_account_level_free_shipping, FALSE) AS has_account_level_free_shipping,
+      IFNULL(PF.has_ads_redirect, FALSE) AS has_ads_redirect,
+      IFNULL(PF.has_valid_video_link, FALSE) AS has_valid_video_link,
+      IFNULL(PF.has_loyalty_member_pricing_activated, FALSE) AS has_loyalty_member_pricing_activated,
+      IFNULL(AP.is_lia_ready_or_started, FALSE) AS is_lia_ready_or_started,
+      IFNULL(AP.is_lia_enabled, FALSE) AS is_lia_enabled,
+      IFNULL(AP.has_merchant_promotions_enabled, FALSE) AS has_merchant_promotions_enabled,
+      IFNULL(AP.has_product_reviews_enabled, FALSE) AS has_product_reviews_enabled,
+      IFNULL(AP.has_checkout_on_merchant_enabled, FALSE) AS has_checkout_on_merchant_enabled,
+      IFNULL(AP.has_cwcd_implemented, FALSE) AS has_cwcd_implemented
     FROM
       AllAccounts AS A
     LEFT JOIN Lia AS L
@@ -174,6 +223,10 @@ WITH
       ON ALS.merchant_id = A.merchant_id
     LEFT JOIN EnabledDestinations AS ED
       ON ED.merchant_id = A.merchant_id
+    LEFT JOIN ProductFeatures AS PF
+      ON PF.merchant_id = A.merchant_id
+    LEFT JOIN AccountPrograms AS AP
+      ON AP.merchant_id = A.merchant_id
   ),
   HasFreeListings AS (
     SELECT DISTINCT
@@ -238,15 +291,6 @@ WITH
     FROM Account
     WHERE NOT lia_has_odo_implemented
   ),
-  AccountLevelShippingImplemented AS (
-    SELECT DISTINCT
-      merchant_id,
-      aggregator_id,
-      'uses account-level shipping settings' AS metric_name,
-      'account-level shipping not implemented' AS data_quality_flag,
-    FROM Account
-    WHERE NOT has_account_level_shipping
-  ),
   AccountLevelShippingSpeed AS (
     SELECT DISTINCT
       merchant_id,
@@ -274,6 +318,94 @@ WITH
     FROM Account
     WHERE NOT has_account_level_fast_shipping
   ),
+  HasAccountLevelShipping AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has account level shipping' AS metric_name,
+      'no account level shipping' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_account_level_shipping
+  ),
+  HasMcaMarketplaceStructure AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has MCA marketplace structure' AS metric_name,
+      'no MCA marketplace structure' AS data_quality_flag
+    FROM Account
+    WHERE aggregator_id = 0
+  ),
+  HasAdsRedirect AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has ads_redirect' AS metric_name,
+      'no ads_redirect' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_ads_redirect
+  ),
+  HasValidVideoLink AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has valid video_link' AS metric_name,
+      'no video_link' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_valid_video_link
+  ),
+  HasLoyaltyPricing AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has loyalty member pricing activated' AS metric_name,
+      'no loyalty member pricing' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_loyalty_member_pricing_activated
+  ),
+  IsLiaReadyOrStarted AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'is LIA ready or started' AS metric_name,
+      'LIA not ready or started' AS data_quality_flag
+    FROM Account
+    WHERE NOT is_lia_ready_or_started
+  ),
+  IsLiaEnabled AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'is LIA enabled' AS metric_name,
+      'LIA not enabled' AS data_quality_flag
+    FROM Account
+    WHERE NOT is_lia_enabled
+  ),
+  HasMerchantPromotionsEnabled AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has merchant promotions enabled' AS metric_name,
+      'merchant promotions not enabled' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_merchant_promotions_enabled
+  ),
+  HasProductReviewsEnabled AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has product reviews enabled' AS metric_name,
+      'product reviews not enabled' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_product_reviews_enabled
+  ),
+  HasCheckoutOnMerchantEnabled AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has checkout on merchant enabled' AS metric_name,
+      'checkout not enabled' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_checkout_on_merchant_enabled
+  ),
+  HasCwcdImplemented AS (
+    SELECT DISTINCT
+      merchant_id, aggregator_id,
+      'has CWCD implemented' AS metric_name,
+      'CWCD not implemented' AS data_quality_flag
+    FROM Account
+    WHERE NOT has_cwcd_implemented
+  ),
   AllMetrics AS (
     SELECT * FROM HasFreeListings
     UNION ALL
@@ -287,8 +419,6 @@ WITH
     UNION ALL
     SELECT * FROM StorePickupImplemented
     UNION ALL
-    SELECT * FROM AccountLevelShippingImplemented
-    UNION ALL
     SELECT * FROM AccountLevelShippingSpeed
     UNION ALL
     SELECT * FROM AccountLevelFreeShipping
@@ -296,6 +426,28 @@ WITH
     SELECT * FROM AccountLevelFastShipping
     UNION ALL
     SELECT * FROM OnDisplayToOrderImplemented
+    UNION ALL
+    SELECT * FROM HasAccountLevelShipping
+    UNION ALL
+    SELECT * FROM HasMcaMarketplaceStructure
+    UNION ALL
+    SELECT * FROM HasAdsRedirect
+    UNION ALL
+    SELECT * FROM HasValidVideoLink
+    UNION ALL
+    SELECT * FROM HasLoyaltyPricing
+    UNION ALL
+    SELECT * FROM IsLiaReadyOrStarted
+    UNION ALL
+    SELECT * FROM IsLiaEnabled
+    UNION ALL
+    SELECT * FROM HasMerchantPromotionsEnabled
+    UNION ALL
+    SELECT * FROM HasProductReviewsEnabled
+    UNION ALL
+    SELECT * FROM HasCheckoutOnMerchantEnabled
+    UNION ALL
+    SELECT * FROM HasCwcdImplemented
   )
 SELECT DISTINCT
   CURRENT_DATE('UTC') AS extraction_date,

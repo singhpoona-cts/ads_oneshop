@@ -112,6 +112,7 @@ class _Clients:
         credentials=credentials)
     self.services = ma.AccountServicesServiceClient(
         credentials=credentials)
+    self.programs = ma.ProgramsServiceClient(credentials=credentials)
 
 
 def _get_or_none(request_fn, *, resource_label):
@@ -246,6 +247,10 @@ def _fetch_account_row(
 
   for s in services_msgs:
     account_msg.account_services.append(_to_service_row(s))
+
+  for p in clients.programs.list_programs(
+      ma.ListProgramsRequest(parent=account_resource_name)):
+    account_msg.programs.add().CopyFrom(ma.Program.pb(p))
 
   return account_msg
 

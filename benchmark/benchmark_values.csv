@@ -1,40 +1,67 @@
 metric_name,benchmark,last_update
-% items disapproved,0.080,2024-07-30
-% items that have brand,0.850,2024-07-30
-% items that have gtin,0.850,2024-07-30
-% items with 3 or more additional images,0.500,2024-07-30
-% items with age group,0.800,2024-07-30
-% items with clicks,0.100,2024-07-30
-% items with color,0.450,2024-07-30
-% items with custom label,0.900,2024-07-30
-% items with description length >= 500,0.800,2024-07-30
-% items with gender,0.800,2024-07-30
-% items with generic image,0.000,2024-07-30
-% items with good product_type depth,0.750,2024-07-30
-% items with impressions,0.300,2024-07-30
-% items with invalid gtins,0.000,2024-07-30
-% items with item_group_id,0.350,2024-07-30
-% items with price / availability / condition AIU,0.005,2024-07-30
-% items with product highlight attributes,0.100,2024-07-30
-% items with robots.txt issue,0.000,2024-07-30
-% items with sale price,0.350,2024-07-30
-% items with shipping,0.900,2024-07-30
-% items with size,0.800,2024-07-30
-% items with title length >= 30,0.970,2024-07-30
-% targeted items,0.950,2024-07-30
-availability AIU enabled,1.000,2024-07-30
-has Free Listings enabled,1.000,2024-07-30
-has LIA implemented,1.000,2024-07-30
-image AIU enabled,1.000,2024-07-30
-LIA: % approved items,0.900,2024-07-30
-LIA: has MHLSF implemented,1.000,2024-07-30
-LIA: has Store Pickup implemented,1.000,2024-07-30
-LIA: On display to order implemented,1.000,2024-07-30
-products uploaded via API,1.000,2024-07-30
-% items with lifestyle image,0.050,2024-07-30
-LIA: % items disapproved for missing inventory,0.300,2024-07-30
-% items with shipping speed,0.350,2024-07-30
-% items with fast shipping option,0.050,2024-07-30
-% items with free shipping,0.650,2024-07-30
-% items with duplicate titles,0.250,2024-07-30
-% items with cost_of_goods_sold,0.050,2024-07-30
+products uploaded via API,1.000,2026-08-18
+has Market Insights enabled,1.000,2026-08-18
+has LIA implemented,1.000,2026-08-18
+has Free Listings enabled,1.000,2026-08-18
+is LIA ready or started,1.000,2026-08-18
+is LIA enabled,1.000,2026-08-18
+has MCA marketplace structure,1.000,2026-08-18
+% items disapproved,0.050,2026-08-18
+% items with robots.txt issue,0.000,2026-08-18
+% items with generic image,0.000,2026-08-18
+% items with price / availability / condition AIU,0.005,2026-08-18
+% items with invalid gtins,0.000,2026-08-18
+% items with shipping,1.000,2026-08-18
+uses structured data,1.000,2026-08-18
+image AIU enabled,1.000,2026-08-18
+availability AIU enabled,1.000,2026-08-18
+LIA: % approved items,0.800,2026-08-18
+LIA: % items disapproved for missing inventory,0.300,2026-08-18
+has account level shipping,1.000,2026-08-18
+% items with used condition,0.100,2026-08-18
+% items with custom label,0.950,2026-08-18
+% items with item_group_id,0.350,2026-08-18
+LIA: % eligible items,0.450,2026-08-18
+% items with good product_type depth,1.000,2026-08-18
+% targeted items,0.950,2026-08-18
+% items that have brand,0.800,2026-08-18
+% items that have gtin,0.850,2026-08-18
+% items with description length >= 500,0.800,2026-08-18
+% items with title length >= 30,0.950,2026-08-18
+% items with product highlight attributes,0.850,2026-08-18
+% items with color,0.450,2026-08-18
+% items with age group,0.800,2026-08-18
+% items with gender,0.800,2026-08-18
+% items with size,0.800,2026-08-18
+% items with lifestyle image,0.300,2026-08-18
+% items with image quality >= 1500x1500,0.450,2026-08-18
+% items with duplicate titles,0.300,2026-08-18
+% items with unique titles,0.750,2026-08-18
+% items with impressions,0.350,2026-08-18
+LIA: has MHLSF implemented,1.000,2026-08-18
+LIA: has Store Pickup implemented,1.000,2026-08-18
+LIA: has curbside pickup implemented,1.000,2026-08-18
+LIA: On display to order implemented,1.000,2026-08-18
+active promotions last year,5.000,2026-08-18
+has merchant promotions enabled,1.000,2026-08-18
+has product reviews enabled,1.000,2026-08-18
+% items with sale price,0.250,2026-08-18
+% items with 3 or more additional images,0.550,2026-08-18
+% items with shipping speed,0.950,2026-08-18
+% items with fast shipping option,0.050,2026-08-18
+% items with free shipping,0.550,2026-08-18
+has returns policy enabled,1.000,2026-08-18
+% items with cost_of_goods_sold,0.050,2026-08-18
+has CWCD implemented,1.000,2026-08-18
+% items with clicks,0.100,2026-08-18
+% items with installment,0.100,2026-08-18
+Has 1P Loyalty audience list(s) uploaded in Customer Match,1.000,2026-08-18
+Has loyalty shipping activated,1.000,2026-08-18
+has loyalty member pricing activated,1.000,2026-08-18
+Check if product feed is attached to Demand Gen Campaigns,0.900,2026-08-18
+Images eligible for Demand Gen,0.900,2026-08-18
+% items with short title,0.100,2026-08-18
+has checkout on merchant enabled,0.900,2026-08-18
+has ads_redirect,0.900,2026-08-18
+Has available Custom Labels to drive product relevance,0.900,2026-08-18
+has valid video_link,0.900,2026-08-18

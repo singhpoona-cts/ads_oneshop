@@ -86,6 +86,74 @@ WITH
       ) AS lia_has_odo_implemented
     FROM ${PROJECT_NAME}.${DATASET_NAME}.liasettings AS L
   ),
+  Programs AS (
+    SELECT
+      account_id AS merchant_id,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('local-inventory-ads', 'local_inventory_ads')
+        AND prog.state IN ('ENABLED', 'ELIGIBLE')
+      ) AS lia_is_lia_ready_or_started,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('local-inventory-ads', 'local_inventory_ads')
+        AND prog.state = 'ENABLED'
+      ) AS lia_is_lia_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('promotions')
+        AND prog.state = 'ENABLED'
+      ) AS has_merchant_promotions_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('product-reviews', 'product_reviews')
+        AND prog.state = 'ENABLED'
+      ) AS has_product_reviews_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('checkout', 'shopping-actions', 'shopping_actions')
+        AND prog.state = 'ENABLED'
+      ) AS has_checkout_on_merchant_enabled,
+      LOGICAL_OR(
+        SPLIT(prog.name, '/')[SAFE_OFFSET(3)] IN ('checkout', 'shopping-actions', 'shopping_actions')
+        AND (ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(TO_JSON(prog), '$.unmet_requirements'), [])) = 0 OR prog.state = 'ENABLED')
+      ) AS has_cwcd_implemented
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.accounts AS A
+    LEFT JOIN UNNEST(A.programs) AS prog
+    GROUP BY 1
+  ),
+  ActiveReturns AS (
+    SELECT DISTINCT
+      account_id AS merchant_id,
+      ARRAY_LENGTH(R.returns) > 0 AS has_returns_enabled
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.returns AS R
+  ),
+  ActivePromotionsCount AS (
+    SELECT
+      account_id AS merchant_id,
+      COUNTIF(
+        COALESCE(
+          SAFE_CAST(LEFT(SPLIT(P.attributes.promotion_effective_period, '/')[SAFE_OFFSET(1)], 10) AS DATE),
+          SAFE_CAST(LEFT(SPLIT(P.attributes.promotion_effective_period, '/')[SAFE_OFFSET(0)], 10) AS DATE)
+        ) >= DATE_SUB(CURRENT_DATE(), INTERVAL 365 DAY)
+      ) AS active_promotions_count
+    FROM
+      ${PROJECT_NAME}.${DATASET_NAME}.promotions AS Pr,
+      UNNEST(Pr.promotions) AS P
+    GROUP BY 1
+  ),
+  Reports AS (
+    SELECT DISTINCT
+      account_id AS merchant_id,
+      IFNULL(has_market_insights, FALSE) AS has_market_insights,
+      IFNULL(ARRAY_LENGTH(structured_data_issues) >= 0, FALSE) AS uses_structured_data
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.reports
+  ),
+  CurbsidePickup AS (
+    SELECT
+      CAST(account_id AS INT64) AS merchant_id,
+      LOGICAL_OR(
+        UPPER(COALESCE(channel, product.channel, '')) = 'LOCAL'
+        AND JSON_VALUE(TO_JSON(product.product_attributes), '$.pickup_method') = 'curbside'
+      ) AS lia_has_curbside_pickup_implemented
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.products
+    GROUP BY 1
+  ),
   AllShippingData AS (
     -- Native Merchant API v1 flat per-account shipping settings. The
     -- old {settings, children[]} envelope is gone; each row is one account.
@@ -185,6 +253,15 @@ WITH
       CONCAT(A.merchant_name, ' (', A.merchant_id, ')') AS merchant_name_with_id
     FROM AllAccounts AS A
   ),
+  ProductFeatures AS (
+    SELECT
+      CAST(account_id AS INT64) AS merchant_id,
+      LOGICAL_OR(IFNULL(JSON_VALUE(TO_JSON(product.product_attributes), '$.ads_redirect'), '') != '') AS has_ads_redirect,
+      LOGICAL_OR(IFNULL(JSON_VALUE(TO_JSON(product.product_attributes), '$.video_link'), '') != '') AS has_valid_video_link,
+      LOGICAL_OR(ARRAY_LENGTH(JSON_QUERY_ARRAY(TO_JSON(product.product_attributes), '$.loyalty_programs')) > 0) AS has_loyalty_member_pricing_activated
+    FROM ${PROJECT_NAME}.${DATASET_NAME}.products
+    GROUP BY 1
+  ),
   Account AS (
     SELECT DISTINCT
       A.merchant_id,
@@ -199,12 +276,38 @@ WITH
       IFNULL(ALS.has_account_level_shipping_speed, FALSE) AS has_account_level_shipping_speed,
       IFNULL(ALS.has_account_level_fast_shipping, FALSE) AS has_account_level_fast_shipping,
       IFNULL(ALS.has_account_level_free_shipping, FALSE) AS has_account_level_free_shipping,
+      IFNULL(PF.has_ads_redirect, FALSE) AS has_ads_redirect,
+      IFNULL(PF.has_valid_video_link, FALSE) AS has_valid_video_link,
+      IFNULL(PF.has_loyalty_member_pricing_activated, FALSE) AS has_loyalty_member_pricing_activated,
+      IFNULL(Prog.lia_is_lia_ready_or_started, FALSE) AS lia_is_lia_ready_or_started,
+      IFNULL(Prog.lia_is_lia_enabled, FALSE) AS lia_is_lia_enabled,
+      IFNULL(Prog.has_merchant_promotions_enabled, FALSE) AS has_merchant_promotions_enabled,
+      IFNULL(Prog.has_product_reviews_enabled, FALSE) AS has_product_reviews_enabled,
+      IFNULL(Prog.has_checkout_on_merchant_enabled, FALSE) AS has_checkout_on_merchant_enabled,
+      IFNULL(Prog.has_cwcd_implemented, FALSE) AS has_cwcd_implemented,
+      IFNULL(AR.has_returns_enabled, FALSE) AS has_returns_enabled,
+      IFNULL(APC.active_promotions_count, 0) AS active_promotions_count,
+      IFNULL(Rep.has_market_insights, FALSE) AS has_market_insights,
+      IFNULL(Rep.uses_structured_data, FALSE) AS uses_structured_data,
+      IFNULL(CP.lia_has_curbside_pickup_implemented, FALSE) AS lia_has_curbside_pickup_implemented,
     FROM
       AllAccounts AS A
     LEFT JOIN Lia AS L
       ON L.merchant_id = A.merchant_id
     LEFT JOIN AccountLevelShipping AS ALS
       ON ALS.merchant_id = A.merchant_id
+    LEFT JOIN ProductFeatures AS PF
+      ON PF.merchant_id = A.merchant_id
+    LEFT JOIN Programs AS Prog
+      ON Prog.merchant_id = A.merchant_id
+    LEFT JOIN ActiveReturns AS AR
+      ON AR.merchant_id = A.merchant_id
+    LEFT JOIN ActivePromotionsCount AS APC
+      ON APC.merchant_id = A.merchant_id
+    LEFT JOIN Reports AS Rep
+      ON Rep.merchant_id = A.merchant_id
+    LEFT JOIN CurbsidePickup AS CP
+      ON CP.merchant_id = A.merchant_id
   ),
   AdsStats AS (
     SELECT
@@ -229,7 +332,7 @@ WITH
   ProductStatus AS (
     SELECT
       account_id AS merchant_id,
-      P.channel,
+      COALESCE(P.channel, P.product.channel, 'online') AS channel,
       offer_id AS product_id,
       P.status.item_level_issues,
       ARRAY(
@@ -245,6 +348,7 @@ WITH
     LEFT JOIN P.status.destination_statuses AS DS
     LEFT JOIN EnabledDestinations AS ED
       ON ED.product_id = P.offer_id
+      AND ED.merchant_id = P.account_id
     WHERE DS.reporting_context = 'SHOPPING_ADS'
   ),
   ItemIssues AS (
@@ -281,6 +385,7 @@ WITH
       ON
         II.product_id = PS.product_id
         AND II.country = targeted_country
+        AND II.merchant_id = PS.merchant_id
   )
 SELECT
   IFNULL(AC.aggregator_id, 0) AS aggregator_id,
@@ -319,6 +424,12 @@ SELECT
   P.product.product_attributes.product_highlights,
   P.product.product_attributes.shipping,
   P.product.product_attributes.cost_of_goods_sold,
+  P.product.product_attributes.condition,
+  JSON_QUERY(TO_JSON(P.product.product_attributes), '$.installment') AS installment,
+  JSON_VALUE(TO_JSON(P.product.product_attributes), '$.ads_redirect') AS ads_redirect,
+  JSON_VALUE(TO_JSON(P.product.product_attributes), '$.video_link') AS video_link,
+  JSON_QUERY_ARRAY(TO_JSON(P.product.product_attributes), '$.loyalty_programs') AS loyalty_programs,
+  P.status.destination_statuses AS destination_statuses,
   (P.has_shopping_targeting OR P.has_performance_max_targeting) AS has_targeting,
   IFNULL(AD.impressions_last30days, 0) > 0 AS had_impressions,
   IFNULL(AD.clicks_last30days, 0) > 0 AS had_clicks,
@@ -331,7 +442,21 @@ SELECT
   AC.has_account_level_shipping,
   AC.has_account_level_shipping_speed,
   AC.has_account_level_fast_shipping,
-  AC.has_account_level_free_shipping
+  AC.has_account_level_free_shipping,
+  AC.has_ads_redirect,
+  AC.has_valid_video_link,
+  AC.has_loyalty_member_pricing_activated,
+  AC.lia_is_lia_ready_or_started,
+  AC.lia_is_lia_enabled,
+  AC.has_merchant_promotions_enabled,
+  AC.has_product_reviews_enabled,
+  AC.has_checkout_on_merchant_enabled,
+  AC.has_cwcd_implemented,
+  AC.has_returns_enabled,
+  AC.active_promotions_count,
+  AC.has_market_insights,
+  AC.uses_structured_data,
+  AC.lia_has_curbside_pickup_implemented
 FROM ProductStatusCountry AS PSC
 INNER JOIN ${PROJECT_NAME}.${DATASET_NAME}.products AS P
   ON
@@ -1794,8 +1919,509 @@ WITH
       brand,
       metric_name
   ),
+  IsLiaReadyOrStarted AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'is LIA ready or started' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      lia_is_lia_ready_or_started
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  IsLiaEnabled AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'is LIA enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      lia_is_lia_enabled
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasMerchantPromotionsEnabled AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has merchant promotions enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_merchant_promotions_enabled
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasProductReviewsEnabled AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has product reviews enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_product_reviews_enabled
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasCheckoutOnMerchantEnabled AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has checkout on merchant enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_checkout_on_merchant_enabled
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasCwcdImplemented AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has CWCD implemented' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_cwcd_implemented
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasReturnsEnabled AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has returns policy enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_returns_enabled
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  ActivePromotionsCountMetric AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'active promotions last year' AS metric_name,
+      MAX(active_promotions_count) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasMarketInsights AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has Market Insights enabled' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_market_insights
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  UsesStructuredData AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'uses structured data' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      uses_structured_data
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  LiaCurbsidePickupImplemented AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'LIA: has curbside pickup implemented' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      lia_has_curbside_pickup_implemented
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  LiaOffersEligible AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'LIA: % eligible items' AS metric_name,
+      COUNT(*) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      channel = 'local'
+      AND EXISTS(
+        SELECT 1
+        FROM UNNEST(destination_statuses) AS ds
+        WHERE
+          ds.reporting_context = 'LOCAL_INVENTORY_ADS'
+          AND ARRAY_LENGTH(ds.approved_countries) > 0
+      )
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  OffersWithShortTitle AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      '% items with short title' AS metric_name,
+      COUNT(*) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      LENGTH(title) < 15
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  OffersWithUsedCondition AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      '% items with used condition' AS metric_name,
+      COUNT(*) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      UPPER(IFNULL(condition, 'NEW')) != 'NEW'
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  OffersWithUniqueTitles AS (
+    SELECT
+      T.merchant_id,
+      T.channel,
+      T.targeted_country,
+      T.product_type_lvl1,
+      T.product_type_lvl2,
+      T.product_type_lvl3,
+      T.custom_label_0,
+      T.custom_label_1,
+      T.custom_label_2,
+      T.custom_label_3,
+      T.custom_label_4,
+      T.brand,
+      '% items with unique titles' AS metric_name,
+      COUNT(*) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products AS T
+    LEFT JOIN RawDuplicateTitles AS DT
+      ON
+        DT.merchant_id = T.merchant_id
+        AND DT.channel = T.channel
+        AND DT.targeted_country = T.targeted_country
+        AND DT.language_code = SPLIT(T.product_id, ':')[SAFE_OFFSET(1)]
+        AND DT.title = T.title
+    WHERE IFNULL(DT.duplicate_title_count, 1) = 1
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  OffersWithInstallment AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      '% items with installment' AS metric_name,
+      COUNT(*) AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      installment IS NOT NULL AND JSON_VALUE(installment, '$.amount.amount_micros') IS NOT NULL
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasAccountLevelShipping AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has account level shipping' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_account_level_shipping
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasMcaMarketplaceStructure AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has MCA marketplace structure' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      aggregator_id != 0
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasAdsRedirect AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has ads_redirect' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_ads_redirect
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasValidVideoLink AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has valid video_link' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_valid_video_link
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasLoyaltyPricing AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'has loyalty member pricing activated' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      has_loyalty_member_pricing_activated
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
+  HasAvailableCustomLabels AS (
+    SELECT
+      merchant_id,
+      channel,
+      targeted_country,
+      product_type_lvl1,
+      product_type_lvl2,
+      product_type_lvl3,
+      custom_label_0,
+      custom_label_1,
+      custom_label_2,
+      custom_label_3,
+      custom_label_4,
+      brand,
+      'Has available Custom Labels to drive product relevance' AS metric_name,
+      1 AS metric_value
+    FROM ${PROJECT_NAME}.${DATASET_NAME}._tmp_Products
+    WHERE
+      IFNULL(custom_label_0, '') != ''
+      OR IFNULL(custom_label_1, '') != ''
+      OR IFNULL(custom_label_2, '') != ''
+      OR IFNULL(custom_label_3, '') != ''
+      OR IFNULL(custom_label_4, '') != ''
+    GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  ),
   AllMetrics AS (
     SELECT * FROM DisapprovedOffers
+    UNION ALL
+    SELECT * FROM IsLiaReadyOrStarted
+    UNION ALL
+    SELECT * FROM IsLiaEnabled
+    UNION ALL
+    SELECT * FROM HasMerchantPromotionsEnabled
+    UNION ALL
+    SELECT * FROM HasProductReviewsEnabled
+    UNION ALL
+    SELECT * FROM HasCheckoutOnMerchantEnabled
+    UNION ALL
+    SELECT * FROM HasCwcdImplemented
+    UNION ALL
+    SELECT * FROM HasReturnsEnabled
+    UNION ALL
+    SELECT * FROM ActivePromotionsCountMetric
+    UNION ALL
+    SELECT * FROM HasMarketInsights
+    UNION ALL
+    SELECT * FROM UsesStructuredData
+    UNION ALL
+    SELECT * FROM LiaCurbsidePickupImplemented
+    UNION ALL
+    SELECT * FROM LiaOffersEligible
     UNION ALL
     SELECT * FROM OffersWithBrand
     UNION ALL
@@ -1868,6 +2494,26 @@ WITH
     SELECT * FROM ItemsWithDuplicateTitles
     UNION ALL
     SELECT * FROM ItemsWithCostOfGoodsSold
+    UNION ALL
+    SELECT * FROM OffersWithShortTitle
+    UNION ALL
+    SELECT * FROM OffersWithUsedCondition
+    UNION ALL
+    SELECT * FROM OffersWithUniqueTitles
+    UNION ALL
+    SELECT * FROM OffersWithInstallment
+    UNION ALL
+    SELECT * FROM HasAccountLevelShipping
+    UNION ALL
+    SELECT * FROM HasMcaMarketplaceStructure
+    UNION ALL
+    SELECT * FROM HasAdsRedirect
+    UNION ALL
+    SELECT * FROM HasValidVideoLink
+    UNION ALL
+    SELECT * FROM HasLoyaltyPricing
+    UNION ALL
+    SELECT * FROM HasAvailableCustomLabels
   ),
   BenchmarksPerMerchant AS (
     SELECT * FROM MerchantIds, Benchmarks
