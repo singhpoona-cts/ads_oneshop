@@ -428,3 +428,13 @@ sh_binary(
         "@bazel_tools//tools/bash/runfiles",
     ],
 )
+
+py_test(
+    name = "test_gcsfs_upload",
+    srcs = ["tests/test_gcsfs_upload.py"],
+    main = "tests/test_gcsfs_upload.py",
+    deps = [
+        "@acit_deps//absl_py",
+        "@acit_deps//gcsfs",
+    ],
+)

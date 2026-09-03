@@ -1,0 +1,28 @@
+--- a/gcsfs/zb_hns_utils.py	2026-09-03 19:51:57.908782577 +0000
++++ b/gcsfs/zb_hns_utils.py	2026-09-03 19:52:13.761816108 +0000
+@@ -10,13 +10,18 @@
+ from io import BytesIO
+ 
+ from google.api_core.exceptions import NotFound
+-from google.cloud.storage.asyncio.async_appendable_object_writer import (
+-    _DEFAULT_FLUSH_INTERVAL_BYTES,
+-    AsyncAppendableObjectWriter,
+-)
+-from google.cloud.storage.asyncio.async_multi_range_downloader import (
+-    AsyncMultiRangeDownloader,
+-)
++try:
++    from google.cloud.storage.asyncio.async_appendable_object_writer import (
++        _DEFAULT_FLUSH_INTERVAL_BYTES,
++        AsyncAppendableObjectWriter,
++    )
++    from google.cloud.storage.asyncio.async_multi_range_downloader import (
++        AsyncMultiRangeDownloader,
++    )
++except ImportError:
++    _DEFAULT_FLUSH_INTERVAL_BYTES = 1024 * 1024
++    AsyncAppendableObjectWriter = None
++    AsyncMultiRangeDownloader = None
+ 
+ MRD_MAX_RANGES = 1000  # MRD supports up to 1000 ranges per request
+ DEFAULT_CONCURRENCY = int(os.environ.get("DEFAULT_GCSFS_CONCURRENCY", "1"))

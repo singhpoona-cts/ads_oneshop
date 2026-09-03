@@ -18,3 +18,5 @@ google-crc32c
 # pin for artifact registry
 regex==2024.11.6
 typing_extensions
+gcsfs==2026.6.0
+

@@ -47,9 +47,9 @@ pip.parse(
     requirements_lock = "//:requirements_lock.txt",
 )
 pip.override(
-    file = "gcsfs-2025.12.0-py3-none-any.whl",
+    file = "gcsfs-2026.6.0-py3-none-any.whl",
     patch_strip = 1,
-    patches = ["//:gcsfs_chunk_align.patch"],
+    patches = ["//:gcsfs_compat.patch"],
 )
 use_repo(pip, "acit_deps")
 
